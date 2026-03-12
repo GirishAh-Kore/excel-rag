@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+venv/
+env/
+ENV/
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.docker.example
+!.env.development.example
+!.env.production.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+docs/
+examples/
+
+# Test files
+tests/
+test_*.py
+*_test.py
+
+# Data directories (will be mounted as volumes)
+data/
+uploads/
+logs/
+tokens/
+chroma_db/
+test_data/
+
+# Frontend development files (we only need specific files for build)
+frontend/node_modules/
+frontend/.gitignore
+frontend/README.md
+frontend/dist/
+
+# Scripts (not needed in container)
+scripts/
+
+# Docker files
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Temporary files
+*.log
+*.tmp
+*.bak

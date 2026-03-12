@@ -1,0 +1,127 @@
+version: '3.8'
+
+services:
+  # Main web application
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: gdrive-excel-rag-web
+    ports:
+      - "8000:8000"
+    environment:
+      # Environment
+      - ENVIRONMENT=production
+      
+      # API Configuration
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      
+      # Vector Store Configuration
+      - VECTOR_STORE_PROVIDER=chromadb
+      - CHROMA_PERSIST_DIR=/app/chroma_db
+      - CHROMA_HOST=chromadb
+      - CHROMA_PORT=8001
+      
+      # Embedding Configuration
+      - EMBEDDING_PROVIDER=${EMBEDDING_PROVIDER:-openai}
+      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-small}
+      
+      # LLM Configuration
+      - LLM_PROVIDER=${LLM_PROVIDER:-openai}
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_MODEL=${LLM_MODEL:-gpt-4}
+      
+      # Cache Configuration
+      - CACHE_PROVIDER=${CACHE_PROVIDER:-memory}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      
+      # Google Drive Configuration
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-http://localhost:8000/api/v1/auth/callback}
+      
+      # Authentication
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - TOKEN_ENCRYPTION_KEY=${TOKEN_ENCRYPTION_KEY}
+      - WEB_AUTH_USERNAME=${WEB_AUTH_USERNAME:-girish}
+      - WEB_AUTH_PASSWORD=${WEB_AUTH_PASSWORD:-Girish@123}
+      
+      # File Upload Configuration
+      - MAX_UPLOAD_SIZE_MB=${MAX_UPLOAD_SIZE_MB:-100}
+      - UPLOAD_DIR=/app/uploads
+      
+      # Language Processing
+      - SUPPORTED_LANGUAGES=${SUPPORTED_LANGUAGES:-en,th}
+      - DEFAULT_LANGUAGE=${DEFAULT_LANGUAGE:-en}
+      - ENABLE_LEMMATIZATION=${ENABLE_LEMMATIZATION:-true}
+      - THAI_TOKENIZER_ENGINE=${THAI_TOKENIZER_ENGINE:-newmm}
+      
+      # Extraction Configuration
+      - ENABLE_LLM_SUMMARIZATION=${ENABLE_LLM_SUMMARIZATION:-true}
+      - SUMMARIZATION_PROVIDER=${SUMMARIZATION_PROVIDER:-openai}
+      - SUMMARIZATION_MAX_TOKENS=${SUMMARIZATION_MAX_TOKENS:-150}
+      
+      # Logging
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      
+    volumes:
+      - app-data:/app/data
+      - uploads:/app/uploads
+      - logs:/app/logs
+      - tokens:/app/tokens
+      - chroma-data:/app/chroma_db
+    depends_on:
+      chromadb:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ChromaDB vector database
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: gdrive-excel-rag-chromadb
+    ports:
+      - "8001:8000"
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=${ANONYMIZED_TELEMETRY:-FALSE}
+    volumes:
+      - chroma-data:/chroma/chroma
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+# Named volumes for data persistence
+volumes:
+  app-data:
+    driver: local
+  uploads:
+    driver: local
+  logs:
+    driver: local
+  tokens:
+    driver: local
+  chroma-data:
+    driver: local
+
+# Bridge network for service communication
+networks:
+  app-network:
+    driver: bridge

@@ -194,9 +194,13 @@ class AppConfig:
             "timeout": int(os.getenv("LLM_TIMEOUT", "120"))
         }
         
-        # Google Drive Configuration
+        # Google Drive Configuration (optional - only needed for Google Drive integration)
         scopes_str = os.getenv("GOOGLE_SCOPES", "https://www.googleapis.com/auth/drive.readonly")
         scopes = [s.strip() for s in scopes_str.split(",")]
+        
+        # Default encryption key for local development (32 chars minimum)
+        # In production, always set TOKEN_ENCRYPTION_KEY environment variable
+        default_encryption_key = "local-dev-key-not-for-production!"  # 33 chars
         
         google_drive_config = GoogleDriveConfig(
             client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
@@ -204,7 +208,7 @@ class AppConfig:
             redirect_uri=os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/callback"),
             scopes=scopes,
             token_storage_path=os.getenv("TOKEN_STORAGE_PATH", "./tokens"),
-            token_encryption_key=os.getenv("TOKEN_ENCRYPTION_KEY", "")
+            token_encryption_key=os.getenv("TOKEN_ENCRYPTION_KEY", default_encryption_key)
         )
         
         return cls(
@@ -317,14 +321,16 @@ class AppConfig:
         """Validate configuration and return list of errors"""
         errors = []
         
-        # Validate Google Drive OAuth
-        if not self.google_drive.client_id:
-            errors.append("GOOGLE_CLIENT_ID is required for Google Drive authentication")
-        if not self.google_drive.client_secret:
-            errors.append("GOOGLE_CLIENT_SECRET is required for Google Drive authentication")
-        if not self.google_drive.token_encryption_key:
-            errors.append("TOKEN_ENCRYPTION_KEY is required for secure token storage")
-        elif len(self.google_drive.token_encryption_key) < 32:
+        # Google Drive OAuth is OPTIONAL - only validate if credentials are provided
+        # Users can upload files directly without Google Drive
+        if self.google_drive.client_id or self.google_drive.client_secret:
+            if not self.google_drive.client_id:
+                errors.append("GOOGLE_CLIENT_ID is required when using Google Drive")
+            if not self.google_drive.client_secret:
+                errors.append("GOOGLE_CLIENT_SECRET is required when using Google Drive")
+        
+        # Token encryption key validation (has default for local dev)
+        if self.google_drive.token_encryption_key and len(self.google_drive.token_encryption_key) < 32:
             errors.append("TOKEN_ENCRYPTION_KEY must be at least 32 characters long")
         
         # Validate API keys based on provider

@@ -19,7 +19,8 @@ WEB_USERNAME = "girish"
 WEB_PASSWORD = "Girish@123"
 
 # JWT configuration
-JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key-change-in-production")
+# Default secret for local development - CHANGE IN PRODUCTION
+JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", "local-dev-jwt-secret-not-for-prod-use!")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 

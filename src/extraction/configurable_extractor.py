@@ -231,16 +231,24 @@ class ConfigurableExtractor:
         modified_time: datetime
     ) -> WorkbookData:
         """
-        Automatically choose the best extraction strategy.
+        Automatically choose the best extraction strategy with smart fallbacks.
         
-        Strategy:
-        1. Try openpyxl first (fast and free)
-        2. Evaluate extraction quality
-        3. Fall back to Gemini if quality is low and Gemini is enabled
+        Strategy Priority (for Excel files):
+        1. openpyxl (PRIMARY) - Best for pivot tables, charts, formulas, native Excel support
+        2. Unstructured.io (FALLBACK 1) - Good for corrupted files, RAG-optimized chunking
+        3. Docling (FALLBACK 2) - Alternative if Unstructured unavailable
+        4. Gemini (LAST RESORT) - For complex cases requiring multimodal understanding
+        
+        Why openpyxl is primary:
+        - Native Excel format support (preserves structure)
+        - Detects and extracts pivot tables
+        - Detects and extracts charts
+        - Preserves formulas and cell references
+        - Unstructured/Docling flatten pivots and ignore charts
         """
         self.logger.info(f"Smart extraction for {file_name}")
         
-        # Try openpyxl first
+        # Step 1: Try openpyxl first (best for Excel with pivots/charts)
         try:
             workbook_data = self.openpyxl_extractor.extract_workbook(
                 file_content, file_id, file_name, file_path, modified_time
@@ -253,12 +261,56 @@ class ConfigurableExtractor:
                 f"openpyxl extraction quality for {file_name}: {quality.score:.2f}"
             )
             
+            # Check for pivot tables and charts - openpyxl is the only one that handles these
+            has_complex_features = any(
+                sheet.has_pivot_tables or sheet.has_charts 
+                for sheet in workbook_data.sheets
+            )
+            
+            if has_complex_features:
+                self.logger.info(
+                    f"File {file_name} has pivot tables/charts - using openpyxl (only extractor that preserves these)"
+                )
+                return workbook_data
+            
             # If quality is good, use openpyxl result
             if quality.is_high_quality:
                 self.logger.info(f"Using openpyxl extraction for {file_name}")
                 return workbook_data
             
-            # If quality is low and Gemini is available, try Gemini
+            # Step 2: Try Unstructured.io for low quality extraction (better for RAG chunking)
+            if (
+                quality.score < self.config.complexity_threshold
+                and self.unstructured_extractor
+            ):
+                self.logger.info(
+                    f"Low quality extraction ({quality.score:.2f}), "
+                    f"trying Unstructured.io for {file_name}"
+                )
+                try:
+                    return await self.unstructured_extractor.extract_workbook(
+                        file_content, file_id, file_name, file_path, modified_time
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Unstructured.io failed: {e}")
+            
+            # Step 3: Try Docling if Unstructured unavailable
+            if (
+                quality.score < self.config.complexity_threshold
+                and self.docling_extractor
+                and not self.unstructured_extractor
+            ):
+                self.logger.info(
+                    f"Trying Docling for {file_name}"
+                )
+                try:
+                    return await self.docling_extractor.extract_workbook(
+                        file_content, file_id, file_name, file_path, modified_time
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Docling failed: {e}")
+            
+            # Step 4: Try Gemini as last resort for complex cases
             if (
                 quality.score < self.config.complexity_threshold
                 and self.gemini_extractor
@@ -276,11 +328,31 @@ class ConfigurableExtractor:
             return workbook_data
             
         except CorruptedFileError as e:
+            self.logger.warning(f"openpyxl failed for {file_name}: {e}")
+            
+            # Try Unstructured.io first for corrupted files (good at handling edge cases)
+            if self.unstructured_extractor:
+                self.logger.info(f"Trying Unstructured.io for corrupted file {file_name}")
+                try:
+                    return await self.unstructured_extractor.extract_workbook(
+                        file_content, file_id, file_name, file_path, modified_time
+                    )
+                except Exception as ue:
+                    self.logger.warning(f"Unstructured.io also failed: {ue}")
+            
+            # Try Docling
+            if self.docling_extractor:
+                self.logger.info(f"Trying Docling for corrupted file {file_name}")
+                try:
+                    return await self.docling_extractor.extract_workbook(
+                        file_content, file_id, file_name, file_path, modified_time
+                    )
+                except Exception as de:
+                    self.logger.warning(f"Docling also failed: {de}")
+            
             # Try Gemini as last resort
             if self.gemini_extractor and self.config.gemini_fallback_on_error:
-                self.logger.info(
-                    f"openpyxl failed for {file_name}, trying Gemini: {e}"
-                )
+                self.logger.info(f"Trying Gemini for corrupted file {file_name}")
                 return await self.gemini_extractor.extract_workbook(
                     file_content, file_id, file_name, file_path, modified_time
                 )

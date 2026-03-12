@@ -235,8 +235,21 @@ Factory functions for service instantiation:
 - **`configurable_extractor.py`** - Strategy-based extraction with LLM support
 - **`sheet_summarizer.py`** - LLM-based sheet summarization
 - **`extraction_strategy.py`** - Extraction strategy definitions
-- **`gemini_extractor.py`** - Google Gemini multimodal extraction (placeholder)
-- **`llama_extractor.py`** - LlamaParse document extraction (placeholder)
+- **`docling_extractor.py`** - IBM Docling extraction (open-source)
+- **`unstructured_extractor.py`** - Unstructured.io extraction (open-source, local)
+- **`gemini_extractor.py`** - Google Gemini multimodal extraction
+- **`llama_extractor.py`** - LlamaParse document extraction
+
+#### Extraction Strategies
+| Strategy | Best For | Notes |
+|----------|----------|-------|
+| openpyxl | Pivot tables, charts | **Recommended default** - preserves structure |
+| Unstructured | Complex layouts | Open-source, runs locally, no API key |
+| Docling | PDF-heavy workflows | IBM open-source |
+| Gemini | Multimodal understanding | Requires API key |
+| LlamaParse | Document understanding | Requires API key |
+
+> **Important**: openpyxl is recommended for Excel files with pivot tables and charts. Unstructured and Docling flatten pivot tables and ignore charts.
 
 #### Extraction Capabilities
 - **Cell Data**: Values, formulas, formatting, data types
@@ -301,6 +314,10 @@ Factory functions for service instantiation:
 - **`query_engine.py`** - Main query orchestrator
 - **`query_analyzer.py`** - Analyzes query intent, entities, temporal references
 - **`semantic_searcher.py`** - Performs semantic search across collections
+- **`hybrid_searcher.py`** - BM25 + semantic search with RRF fusion
+- **`reranker.py`** - Cross-encoder reranking for improved relevance
+- **`query_expander.py`** - HyDE (Hypothetical Document Embeddings) expansion
+- **`context_compressor.py`** - Contextual compression for long contexts
 - **`file_selector.py`** - Ranks and selects relevant files
 - **`sheet_selector.py`** - Selects relevant sheets within files
 - **`date_parser.py`** - Extracts and parses dates from filenames
@@ -313,6 +330,15 @@ Factory functions for service instantiation:
 - **`citation_generator.py`** - Generates source citations
 - **`data_formatter.py`** - Formats data for presentation
 - **`no_results_handler.py`** - Handles queries with no results
+
+#### Advanced RAG Features
+| Feature | Component | Description |
+|---------|-----------|-------------|
+| Hybrid Search | `hybrid_searcher.py` | BM25 + semantic search with Reciprocal Rank Fusion |
+| Cross-Encoder Reranking | `reranker.py` | Reranks results using cross-encoder models |
+| HyDE Query Expansion | `query_expander.py` | Generates hypothetical documents for better retrieval |
+| Contextual Compression | `context_compressor.py` | Compresses long contexts while preserving relevance |
+| Streaming Responses | `query.py` | SSE streaming for long answer generation |
 
 #### Query Processing Pipeline
 1. **Analysis**: Extract intent, entities, temporal references
@@ -358,7 +384,8 @@ class VectorStore(ABC):
 **Implementations:**
 - **OpenAI**: text-embedding-3-small (1536 dims), text-embedding-3-large (3072 dims)
 - **Sentence Transformers**: Local models (all-MiniLM-L6-v2, all-mpnet-base-v2)
-- **Cohere**: embed-english-v3.0
+- **Cohere**: embed-english-v3.0 (1024 dims)
+- **BGE-M3**: Multilingual embeddings (1024 dims, local, free)
 
 **Interface:**
 ```python
@@ -371,9 +398,11 @@ class EmbeddingService(ABC):
 
 #### LLM Service Abstraction
 **Implementations:**
-- **OpenAI**: GPT-4, GPT-3.5-turbo
+- **OpenAI**: GPT-4o, GPT-4o-mini, GPT-4-turbo
 - **Anthropic**: Claude 3.5 Sonnet, Claude 3 Opus
-- **Google Gemini**: Gemini Pro
+- **Google Gemini**: Gemini Pro, Gemini 1.5 Flash
+- **Ollama**: Llama 3.1, Mistral, Qwen (local, free)
+- **vLLM**: Any HuggingFace model via vLLM server
 
 **Interface:**
 ```python
@@ -610,32 +639,50 @@ class CacheService(ABC):
 **Rationale**: Enable easy migration from MVP to production without code changes
 **Benefit**: Start with ChromaDB + OpenAI, migrate to OpenSearch + Claude
 
-### 2. Multi-Language Support
+### 2. Open-Source Stack Option
+**Decision**: Support fully open-source deployment with zero API costs
+**Configuration**:
+- Vector Store: ChromaDB (local)
+- Embeddings: BGE-M3 (local, multilingual, 1024 dims)
+- LLM: Ollama with Llama 3.1 (local)
+- Extraction: openpyxl or Unstructured.io (local)
+**Benefit**: Complete privacy, no API costs, runs entirely on-premises
+
+### 3. Multi-Language Support
 **Decision**: Implement language detection and specialized tokenization
 **Rationale**: Support both English and Thai users
 **Benefit**: Better semantic matching and query understanding
 
-### 3. Encrypted Token Storage
+### 4. Advanced RAG Pipeline
+**Decision**: Implement hybrid search, reranking, and HyDE
+**Rationale**: Improve retrieval quality beyond basic semantic search
+**Components**:
+- Hybrid Search: BM25 + semantic with RRF fusion
+- Cross-Encoder Reranking: ms-marco-MiniLM-L-6-v2
+- HyDE: Hypothetical Document Embeddings for query expansion
+**Benefit**: Significantly improved retrieval accuracy
+
+### 5. Encrypted Token Storage
 **Decision**: Use Fernet symmetric encryption for OAuth tokens
 **Rationale**: Secure local storage without external key management
 **Benefit**: Simple deployment while maintaining security
 
-### 4. Metadata-Rich Embeddings
+### 6. Metadata-Rich Embeddings
 **Decision**: Store rich metadata with embeddings (file_id, sheet_name, etc.)
 **Rationale**: Enable filtering and ranking based on metadata
 **Benefit**: More relevant search results and better file selection
 
-### 5. Conversation Context Management
+### 7. Conversation Context Management
 **Decision**: Use cache service for session management
 **Rationale**: Enable follow-up questions with context
 **Benefit**: Natural multi-turn conversations
 
-### 6. Cost Tracking
+### 8. Cost Tracking
 **Decision**: Track embedding generation costs per API call
 **Rationale**: Monitor and optimize API spending
 **Benefit**: Visibility into operational costs
 
-### 7. Comprehensive Error Handling
+### 9. Comprehensive Error Handling
 **Decision**: Graceful degradation with fallback strategies
 **Rationale**: Ensure system continues functioning despite failures
 **Benefit**: Better user experience and system reliability

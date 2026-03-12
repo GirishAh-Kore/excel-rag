@@ -63,8 +63,17 @@ class ExtractionConfig:
     gemini_fallback_on_error: bool
     enable_llamaparse: bool
     llamaparse_api_key: Optional[str]
-    use_auto_strategy: bool
-    complexity_threshold: float
+    # Docling (IBM open-source)
+    enable_docling: bool = False
+    docling_model: str = "default"
+    # Unstructured.io (open-source, runs locally)
+    enable_unstructured: bool = False
+    unstructured_api_key: Optional[str] = None
+    unstructured_api_url: Optional[str] = None
+    unstructured_strategy: str = "auto"
+    # Auto strategy
+    use_auto_strategy: bool = False
+    complexity_threshold: float = 0.7
 
 
 @dataclass
@@ -234,7 +243,7 @@ class AppConfig:
                 # Docling (open-source)
                 enable_docling=os.getenv("ENABLE_DOCLING", "false").lower() == "true",
                 docling_model=os.getenv("DOCLING_MODEL", "default"),
-                # Unstructured.io
+                # Unstructured.io (open-source, runs locally)
                 enable_unstructured=os.getenv("ENABLE_UNSTRUCTURED", "false").lower() == "true",
                 unstructured_api_key=os.getenv("UNSTRUCTURED_API_KEY"),
                 unstructured_api_url=os.getenv("UNSTRUCTURED_API_URL"),
@@ -325,7 +334,7 @@ class AppConfig:
         elif self.embedding.provider == "cohere":
             if not self.embedding.config.get("api_key"):
                 errors.append("EMBEDDING_API_KEY is required for Cohere embeddings")
-        elif self.embedding.provider == "sentence-transformers":
+        elif self.embedding.provider in ("sentence-transformers", "bge", "bge-m3", "bge-large"):
             # No API key needed for local models
             pass
         else:
@@ -340,6 +349,9 @@ class AppConfig:
         elif self.llm.provider == "gemini":
             if not self.llm.config.get("api_key"):
                 errors.append("LLM_API_KEY is required for Gemini LLM")
+        elif self.llm.provider in ("ollama", "vllm"):
+            # No API key required for local LLM providers
+            pass
         else:
             errors.append(f"Unknown LLM provider: {self.llm.provider}")
         

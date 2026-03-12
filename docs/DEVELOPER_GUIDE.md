@@ -125,10 +125,13 @@ gdrive-excel-rag/
 │   │   ├── openai_embedding_service.py
 │   │   ├── sentence_transformer_service.py
 │   │   ├── cohere_embedding_service.py
+│   │   ├── bge_embedding_service.py  # BGE-M3 (local, multilingual)
 │   │   ├── llm_service.py        # LLM interface
 │   │   ├── openai_llm_service.py
 │   │   ├── anthropic_llm_service.py
 │   │   ├── gemini_llm_service.py
+│   │   ├── ollama_llm_service.py     # Ollama (local)
+│   │   ├── vllm_llm_service.py       # vLLM server
 │   │   ├── cache_service.py      # Cache interface
 │   │   ├── memory_cache.py
 │   │   └── redis_cache.py
@@ -150,12 +153,14 @@ gdrive-excel-rag/
 │   ├── gdrive/                   # Google Drive integration
 │   │   └── connector.py          # Drive API client
 │   ├── extraction/               # Excel extraction
-│   │   ├── content_extractor.py  # Core extraction
+│   │   ├── content_extractor.py  # Core extraction (openpyxl)
 │   │   ├── configurable_extractor.py
 │   │   ├── sheet_summarizer.py
 │   │   ├── extraction_strategy.py
-│   │   ├── gemini_extractor.py   # Placeholder
-│   │   └── llama_extractor.py    # Placeholder
+│   │   ├── docling_extractor.py  # IBM Docling (open-source)
+│   │   ├── unstructured_extractor.py  # Unstructured.io (open-source)
+│   │   ├── gemini_extractor.py   # Google Gemini
+│   │   └── llama_extractor.py    # LlamaParse
 │   ├── indexing/                 # Indexing pipeline
 │   │   ├── indexing_pipeline.py
 │   │   ├── indexing_orchestrator.py
@@ -166,6 +171,10 @@ gdrive-excel-rag/
 │   │   ├── query_engine.py       # Main orchestrator
 │   │   ├── query_analyzer.py     # Intent extraction
 │   │   ├── semantic_searcher.py  # Vector search
+│   │   ├── hybrid_searcher.py    # BM25 + semantic fusion
+│   │   ├── reranker.py           # Cross-encoder reranking
+│   │   ├── query_expander.py     # HyDE query expansion
+│   │   ├── context_compressor.py # Contextual compression
 │   │   ├── file_selector.py      # File ranking
 │   │   ├── sheet_selector.py     # Sheet selection
 │   │   ├── comparison_engine.py  # Cross-file comparison
@@ -537,19 +546,37 @@ See `.env.example` for all available options.
 VECTOR_STORE_PROVIDER=chromadb  # or opensearch
 CHROMADB_PATH=./data/chroma
 
-# Embedding
-EMBEDDING_PROVIDER=openai
-EMBEDDING_API_KEY=sk-...
+# Embedding (choose one)
+EMBEDDING_PROVIDER=openai       # OpenAI (API)
+EMBEDDING_PROVIDER=bge-m3       # BGE-M3 (local, free)
+EMBEDDING_PROVIDER=sentence-transformers  # Local, free
+EMBEDDING_API_KEY=sk-...        # Only for API providers
 EMBEDDING_MODEL=text-embedding-3-small
 
-# LLM
-LLM_PROVIDER=openai  # or anthropic, gemini
-LLM_API_KEY=sk-...
-LLM_MODEL=gpt-4
+# LLM (choose one)
+LLM_PROVIDER=openai             # OpenAI GPT-4o
+LLM_PROVIDER=anthropic          # Claude 3.5 Sonnet
+LLM_PROVIDER=gemini             # Google Gemini
+LLM_PROVIDER=ollama             # Ollama (local, free)
+LLM_PROVIDER=vllm               # vLLM server
+LLM_API_KEY=sk-...              # Only for API providers
+LLM_MODEL=gpt-4o
+LLM_BASE_URL=http://localhost:11434  # For Ollama/vLLM
+
+# Extraction Strategy
+EXTRACTION_STRATEGY=openpyxl    # Best for pivot tables/charts
+EXTRACTION_STRATEGY=unstructured  # Open-source, local
+EXTRACTION_STRATEGY=docling     # IBM open-source
+
+# Advanced RAG Features
+ENABLE_HYBRID_SEARCH=true       # BM25 + semantic
+ENABLE_RERANKING=true           # Cross-encoder reranking
+ENABLE_HYDE=true                # HyDE query expansion
+ENABLE_STREAMING=true           # SSE streaming
 
 # Cache
-CACHE_PROVIDER=memory  # or redis
-REDIS_URL=redis://localhost:6379
+CACHE_BACKEND=memory            # or redis
+REDIS_HOST=localhost
 
 # Language
 SUPPORTED_LANGUAGES=en,th

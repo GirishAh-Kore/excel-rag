@@ -19,12 +19,20 @@ A production-ready Retrieval-Augmented Generation (RAG) system for querying Exce
 
 ## Quick Start
 
-### Prerequisites
+### Option 1: Automated Setup (Recommended)
 
-- Python 3.9+
-- Google Cloud Project with Drive API enabled (for Google Drive integration)
+```bash
+# Clone the repository
+git clone https://github.com/GirishAh-Kore/excel-rag.git
+cd excel-rag
 
-### Installation
+# Run the setup script
+./scripts/setup-local.sh
+
+# Follow the printed instructions to start the services
+```
+
+### Option 2: Manual Setup
 
 ```bash
 # Clone the repository
@@ -37,21 +45,33 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # Install dependencies
 pip install -r requirements.txt
+pip install FlagEmbedding  # For local embeddings
 
-# Configure environment
-cp .env.example .env
-# Edit .env with your credentials
+# Configure environment (use local config - no API keys needed)
+cp .env.local .env
 ```
 
-### Start the Server
+### Start the Services
 
 ```bash
-uvicorn src.api.main:app --reload
+# Terminal 1: Start Ollama (local LLM)
+brew install ollama  # First time only
+ollama pull llama3.1  # First time only
+ollama serve
+
+# Terminal 2: Start Backend
+source venv/bin/activate
+uvicorn src.main:app --reload --port 8000
+
+# Terminal 3: Start Frontend
+cd frontend && npm install && npm run dev
 ```
 
-📖 **Mac Users**: See [Mac Installation Guide](docs/MAC_INSTALLATION_GUIDE.md) for detailed setup with Apple Silicon optimization.
+Open http://localhost:5173 and login with `girish` / `Girish@123`
 
-Access the API at http://localhost:8000 and documentation at http://localhost:8000/docs
+📖 **Detailed Guide**: See [Installation Guide](docs/INSTALLATION_GUIDE.md) for complete setup instructions and troubleshooting.
+
+📖 **Mac Users**: See [Mac Installation Guide](docs/MAC_INSTALLATION_GUIDE.md) for Apple Silicon optimization.
 
 ## Configuration Options
 

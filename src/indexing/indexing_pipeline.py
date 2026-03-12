@@ -8,23 +8,45 @@ It also provides progress tracking and reporting capabilities.
 
 import logging
 import time
-from typing import Optional, Dict, Any
-from datetime import datetime
+from typing import Any, Dict, Optional, Protocol, runtime_checkable
 
-from src.gdrive.connector import GoogleDriveConnector
-from src.extraction.configurable_extractor import ConfigurableExtractor
+from src.abstractions.cache_service import CacheService
 from src.abstractions.embedding_service import EmbeddingService
 from src.abstractions.vector_store import VectorStore
-from src.abstractions.cache_service import CacheService
 from src.database.connection import DatabaseConnection
-from src.indexing.indexing_orchestrator import IndexingOrchestrator, IndexingProgress
+from src.extraction.configurable_extractor import ConfigurableExtractor
+from src.gdrive.connector import GoogleDriveConnector
 from src.indexing.embedding_generator import EmbeddingGenerator
-from src.indexing.vector_storage import VectorStorageManager
+from src.indexing.indexing_orchestrator import IndexingOrchestrator, IndexingProgress
 from src.indexing.metadata_storage import MetadataStorageManager
+from src.indexing.vector_storage import VectorStorageManager
 from src.models.domain_models import IndexingReport, WorkbookData
 
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Protocols
+# =============================================================================
+
+
+@runtime_checkable
+class IndexingEventListenerProtocol(Protocol):
+    """
+    Protocol for indexing event listeners.
+    
+    Implementations receive notifications when indexing events occur.
+    Used for cache invalidation and other side effects.
+    """
+    
+    def on_file_indexed(self, file_id: str, file_name: str) -> None:
+        """Called when a file is successfully indexed or re-indexed."""
+        ...
+    
+    def on_file_removed(self, file_id: str) -> None:
+        """Called when a file is removed from the index."""
+        ...
 
 
 class IndexingPipeline:
@@ -51,6 +73,7 @@ class IndexingPipeline:
         vector_store: VectorStore,
         db_connection: DatabaseConnection,
         cache_service: Optional[CacheService] = None,
+        event_listener: Optional[IndexingEventListenerProtocol] = None,
         max_workers: int = 5,
         batch_size: int = 100,
         cost_per_token: float = 0.0
@@ -65,6 +88,7 @@ class IndexingPipeline:
             vector_store: Vector store
             db_connection: Database connection
             cache_service: Optional cache service
+            event_listener: Optional listener for indexing events (e.g., cache invalidation)
             max_workers: Maximum concurrent workers
             batch_size: Embedding batch size
             cost_per_token: Cost per token for embeddings (USD)
@@ -94,6 +118,7 @@ class IndexingPipeline:
             embedding_generator=self.embedding_generator,
             vector_storage=self.vector_storage,
             metadata_storage=self.metadata_storage,
+            event_listener=event_listener,
             max_workers=max_workers
         )
         
@@ -222,6 +247,8 @@ class EnhancedIndexingOrchestrator(IndexingOrchestrator):
     
     This extends the base IndexingOrchestrator to include the full pipeline:
     download → extract → embed → store in vector DB → store metadata
+    
+    Also supports event listeners for cache invalidation on re-indexing.
     """
     
     def __init__(
@@ -232,9 +259,22 @@ class EnhancedIndexingOrchestrator(IndexingOrchestrator):
         embedding_generator: EmbeddingGenerator,
         vector_storage: VectorStorageManager,
         metadata_storage: MetadataStorageManager,
+        event_listener: Optional[IndexingEventListenerProtocol] = None,
         max_workers: int = 5
     ):
-        """Initialize enhanced orchestrator"""
+        """
+        Initialize enhanced orchestrator.
+        
+        Args:
+            gdrive_connector: Google Drive connector
+            content_extractor: Content extractor
+            db_connection: Database connection
+            embedding_generator: Embedding generator
+            vector_storage: Vector storage manager
+            metadata_storage: Metadata storage manager
+            event_listener: Optional listener for indexing events (cache invalidation)
+            max_workers: Maximum concurrent workers
+        """
         super().__init__(
             gdrive_connector=gdrive_connector,
             content_extractor=content_extractor,
@@ -245,6 +285,7 @@ class EnhancedIndexingOrchestrator(IndexingOrchestrator):
         self.embedding_generator = embedding_generator
         self.vector_storage = vector_storage
         self.metadata_storage = metadata_storage
+        self._event_listener = event_listener
     
     def _process_single_file(self, file_metadata) -> bool:
         """
@@ -309,6 +350,19 @@ class EnhancedIndexingOrchestrator(IndexingOrchestrator):
                 FileStatus.INDEXED
             )
             
+            # Notify event listener for cache invalidation (Requirement 43.2)
+            if self._event_listener is not None:
+                try:
+                    self._event_listener.on_file_indexed(
+                        file_id=file_metadata.file_id,
+                        file_name=file_metadata.name
+                    )
+                except Exception as listener_error:
+                    logger.warning(
+                        f"Event listener error for file {file_metadata.name}: "
+                        f"{listener_error}"
+                    )
+            
             # Update progress
             with self.progress_lock:
                 self.progress.files_processed += 1
@@ -338,7 +392,7 @@ class EnhancedIndexingOrchestrator(IndexingOrchestrator):
             
             return False
     
-    def _remove_file_from_index(self, file_id: str):
+    def _remove_file_from_index(self, file_id: str) -> None:
         """
         Remove a file from both vector store and metadata database.
         
@@ -351,6 +405,16 @@ class EnhancedIndexingOrchestrator(IndexingOrchestrator):
             
             # Mark as deleted in metadata database
             self.metadata_storage.update_file_status(file_id, FileStatus.DELETED)
+            
+            # Notify event listener for cache invalidation (Requirement 43.2)
+            if self._event_listener is not None:
+                try:
+                    self._event_listener.on_file_removed(file_id=file_id)
+                except Exception as listener_error:
+                    logger.warning(
+                        f"Event listener error for removed file {file_id}: "
+                        f"{listener_error}"
+                    )
             
             logger.info(f"Removed file from index: {file_id}")
             

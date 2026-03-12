@@ -7,6 +7,7 @@ It manages full and incremental indexing, parallel processing, state tracking, a
 
 import logging
 import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -104,6 +105,11 @@ class IndexingOrchestrator:
         self.pause_event = Event()
         self.pause_event.set()  # Not paused by default
         self.stop_event = Event()
+        
+        # Job tracking for local file indexing
+        self._active_jobs: Dict[str, Dict[str, Any]] = {}
+        self._completed_jobs: Dict[str, Dict[str, Any]] = {}
+        self._failed_jobs: Dict[str, Dict[str, Any]] = {}
         
         logger.info(f"IndexingOrchestrator initialized with max_workers={max_workers}")
     
@@ -491,11 +497,12 @@ class IndexingOrchestrator:
                 cursor = conn.cursor()
                 cursor.execute(
                     """
-                    INSERT INTO files (file_id, name, path, size, modified_time, md5_checksum, status, indexed_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO files (file_id, name, path, mime_type, size, modified_time, md5_checksum, status, indexed_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(file_id) DO UPDATE SET
                         name = excluded.name,
                         path = excluded.path,
+                        mime_type = excluded.mime_type,
                         size = excluded.size,
                         modified_time = excluded.modified_time,
                         md5_checksum = excluded.md5_checksum,
@@ -506,6 +513,7 @@ class IndexingOrchestrator:
                         file_metadata.file_id,
                         file_metadata.name,
                         file_metadata.path,
+                        file_metadata.mime_type,
                         file_metadata.size,
                         file_metadata.modified_time.isoformat(),
                         file_metadata.md5_checksum,
@@ -649,3 +657,236 @@ class IndexingOrchestrator:
         except Exception as e:
             logger.error(f"Error counting sheets: {e}")
             return 0
+
+    # =========================================================================
+    # Local File Indexing Methods (for file upload API)
+    # =========================================================================
+    
+    def start_indexing(
+        self,
+        file_paths: List[str],
+        incremental: bool = False
+    ) -> str:
+        """
+        Start indexing for local files (uploaded via API).
+        
+        This method handles files uploaded directly to the server,
+        as opposed to files from Google Drive.
+        
+        Args:
+            file_paths: List of local file paths to index
+            incremental: Whether to skip unchanged files (based on checksum)
+            
+        Returns:
+            Job ID for tracking the indexing operation
+        """
+        import hashlib
+        from pathlib import Path
+        
+        job_id = f"job_{uuid.uuid4().hex[:12]}"
+        
+        logger.info(f"Starting local file indexing job {job_id} for {len(file_paths)} files")
+        
+        # Track job
+        self._active_jobs[job_id] = {
+            "job_id": job_id,
+            "status": "running",
+            "file_paths": file_paths,
+            "started_at": datetime.now(),
+            "files_processed": 0,
+            "files_failed": 0,
+            "errors": []
+        }
+        
+        # Process files in background thread
+        import threading
+        thread = threading.Thread(
+            target=self._process_local_files,
+            args=(job_id, file_paths, incremental)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return job_id
+    
+    def _process_local_files(
+        self,
+        job_id: str,
+        file_paths: List[str],
+        incremental: bool
+    ):
+        """
+        Process local files for indexing (runs in background thread).
+        
+        Args:
+            job_id: Job identifier
+            file_paths: List of file paths
+            incremental: Whether to skip unchanged files
+        """
+        from pathlib import Path
+        import hashlib
+        from src.abstractions.embedding_service_factory import EmbeddingServiceFactory
+        from src.abstractions.vector_store_factory import VectorStoreFactory
+        from src.config import get_config
+        from src.indexing.embedding_generator import EmbeddingGenerator
+        from src.indexing.vector_storage import VectorStorageManager
+        from src.indexing.metadata_storage import MetadataStorageManager
+        
+        try:
+            # Initialize embedding and vector storage services
+            config = get_config()
+            embedding_service = EmbeddingServiceFactory.create(
+                config.embedding.provider,
+                config.embedding.config
+            )
+            vector_store = VectorStoreFactory.create(
+                config.vector_store.provider,
+                config.vector_store.config
+            )
+            
+            embedding_generator = EmbeddingGenerator(
+                embedding_service=embedding_service,
+                batch_size=50
+            )
+            vector_storage = VectorStorageManager(vector_store=vector_store)
+            metadata_storage = MetadataStorageManager(db_connection=self.db_connection)
+            
+            # Initialize vector store collections
+            embedding_dimension = embedding_service.get_embedding_dimension()
+            vector_storage.initialize_collections(embedding_dimension)
+            
+            for file_path in file_paths:
+                path = Path(file_path)
+                
+                if not path.exists():
+                    logger.warning(f"File not found: {file_path}")
+                    self._active_jobs[job_id]["files_failed"] += 1
+                    self._active_jobs[job_id]["errors"].append(f"File not found: {file_path}")
+                    continue
+                
+                try:
+                    # Read file content
+                    with open(path, "rb") as f:
+                        file_content = f.read()
+                    
+                    # Calculate MD5 checksum
+                    md5_checksum = hashlib.md5(file_content).hexdigest()
+                    
+                    # Create file metadata
+                    file_metadata = FileMetadata(
+                        file_id=md5_checksum,  # Use checksum as ID for local files
+                        name=path.name,
+                        path=str(path),
+                        mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        size=len(file_content),
+                        modified_time=datetime.fromtimestamp(path.stat().st_mtime),
+                        md5_checksum=md5_checksum,
+                        status=FileStatus.PENDING
+                    )
+                    
+                    # Check if should skip (incremental mode)
+                    if incremental and not self._should_index_file(file_metadata):
+                        logger.info(f"Skipping unchanged file: {path.name}")
+                        continue
+                    
+                    # Extract workbook data
+                    workbook_data = self.content_extractor.extract_workbook_sync(
+                        file_content=file_content,
+                        file_name=path.name,
+                        file_id=md5_checksum,
+                        file_path=str(path),
+                        modified_time=file_metadata.modified_time
+                    )
+                    
+                    # Set file metadata in workbook data
+                    workbook_data.file_id = md5_checksum
+                    workbook_data.file_path = str(path)
+                    
+                    # Generate embeddings
+                    logger.info(f"Generating embeddings for {path.name}")
+                    embedding_result = embedding_generator.generate_workbook_embeddings(
+                        workbook_data
+                    )
+                    
+                    # Store embeddings in vector database
+                    logger.info(f"Storing embeddings in vector store for {path.name}")
+                    vector_storage.store_workbook_embeddings(
+                        workbook_data=workbook_data,
+                        embedding_result=embedding_result
+                    )
+                    
+                    # Store metadata in SQLite
+                    metadata_storage.store_workbook_metadata(workbook_data)
+                    
+                    # Update file status
+                    self._update_file_status(file_metadata, FileStatus.INDEXED)
+                    
+                    self._active_jobs[job_id]["files_processed"] += 1
+                    logger.info(f"Indexed file: {path.name} ({len(workbook_data.sheets)} sheets, {len(embedding_result.embeddings)} chunks)")
+                    
+                except Exception as e:
+                    logger.error(f"Failed to index file {file_path}: {e}", exc_info=True)
+                    self._active_jobs[job_id]["files_failed"] += 1
+                    self._active_jobs[job_id]["errors"].append(f"{path.name}: {str(e)}")
+            
+            # Mark job as completed
+            self._active_jobs[job_id]["status"] = "completed"
+            self._active_jobs[job_id]["completed_at"] = datetime.now()
+            
+            # Move to completed jobs
+            self._completed_jobs[job_id] = self._active_jobs.pop(job_id)
+            
+            logger.info(f"Indexing job {job_id} completed")
+            
+        except Exception as e:
+            logger.error(f"Indexing job {job_id} failed: {e}", exc_info=True)
+            self._active_jobs[job_id]["status"] = "failed"
+            self._active_jobs[job_id]["errors"].append(str(e))
+            
+            # Move to failed jobs
+            self._failed_jobs[job_id] = self._active_jobs.pop(job_id)
+    
+    def get_active_jobs(self) -> List[Dict[str, Any]]:
+        """
+        Get list of currently active indexing jobs.
+        
+        Returns:
+            List of active job dictionaries
+        """
+        return list(self._active_jobs.values())
+    
+    def get_completed_jobs(self) -> List[Dict[str, Any]]:
+        """
+        Get list of completed indexing jobs.
+        
+        Returns:
+            List of completed job dictionaries
+        """
+        return list(self._completed_jobs.values())
+    
+    def get_failed_jobs(self) -> List[Dict[str, Any]]:
+        """
+        Get list of failed indexing jobs.
+        
+        Returns:
+            List of failed job dictionaries
+        """
+        return list(self._failed_jobs.values())
+    
+    def get_job_status(self, job_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get status of a specific indexing job.
+        
+        Args:
+            job_id: Job identifier
+            
+        Returns:
+            Job status dictionary or None if not found
+        """
+        if job_id in self._active_jobs:
+            return self._active_jobs[job_id]
+        if job_id in self._completed_jobs:
+            return self._completed_jobs[job_id]
+        if job_id in self._failed_jobs:
+            return self._failed_jobs[job_id]
+        return None

@@ -48,8 +48,17 @@ class DatabaseConfig:
 
 
 @dataclass
-class ExtractionConfig:
-    """Configuration for Excel extraction"""
+class ExtractionSettings:
+    """
+    Runtime configuration for Excel extraction.
+    
+    Note: This is the dataclass version used for runtime configuration.
+    For Pydantic validation, see src/extraction/extraction_strategy.py:ExtractionConfig
+    
+    These two classes have the same fields but different purposes:
+    - ExtractionSettings (this): Runtime config loaded from environment
+    - ExtractionConfig (Pydantic): API validation and serialization
+    """
     default_strategy: str
     max_rows_per_sheet: int
     max_file_size_mb: int
@@ -81,6 +90,15 @@ class IndexingConfig:
     """Configuration for indexing pipeline"""
     max_concurrent_files: int
     batch_size: int
+
+
+@dataclass
+class ConversationConfig:
+    """Configuration for conversation/session management"""
+    session_timeout_seconds: int = 1800  # 30 minutes
+    max_messages_per_session: int = 100
+    max_files_per_session: int = 10
+    cache_prefix: str = "conversation:session:"
 
 
 @dataclass
@@ -147,11 +165,12 @@ class AppConfig:
     google_drive: GoogleDriveConfig
     database: DatabaseConfig
     cache: CacheConfig
-    extraction: ExtractionConfig
+    extraction: ExtractionSettings
     indexing: IndexingConfig
     query: QueryConfig
     api: APIConfig
     language: LanguageConfig
+    conversation: ConversationConfig
     
     @classmethod
     def from_env(cls) -> 'AppConfig':
@@ -198,9 +217,19 @@ class AppConfig:
         scopes_str = os.getenv("GOOGLE_SCOPES", "https://www.googleapis.com/auth/drive.readonly")
         scopes = [s.strip() for s in scopes_str.split(",")]
         
-        # Default encryption key for local development (32 chars minimum)
-        # In production, always set TOKEN_ENCRYPTION_KEY environment variable
-        default_encryption_key = "local-dev-key-not-for-production!"  # 33 chars
+        # Encryption key handling with production safety
+        # In production, TOKEN_ENCRYPTION_KEY MUST be set
+        app_env = os.getenv("APP_ENV", "development")
+        encryption_key = os.getenv("TOKEN_ENCRYPTION_KEY")
+        
+        if not encryption_key:
+            if app_env == "production":
+                raise ValueError(
+                    "TOKEN_ENCRYPTION_KEY environment variable must be set in production. "
+                    "Generate a secure key with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
+                )
+            # Default key for local development only (32 chars minimum)
+            encryption_key = "local-dev-key-not-for-production!"  # 33 chars
         
         google_drive_config = GoogleDriveConfig(
             client_id=os.getenv("GOOGLE_CLIENT_ID", ""),
@@ -208,11 +237,11 @@ class AppConfig:
             redirect_uri=os.getenv("GOOGLE_REDIRECT_URI", "http://localhost:8000/auth/callback"),
             scopes=scopes,
             token_storage_path=os.getenv("TOKEN_STORAGE_PATH", "./tokens"),
-            token_encryption_key=os.getenv("TOKEN_ENCRYPTION_KEY", default_encryption_key)
+            token_encryption_key=encryption_key
         )
         
         return cls(
-            env=os.getenv("APP_ENV", "development"),
+            env=app_env,
             log_level=os.getenv("LOG_LEVEL", "INFO"),
             vector_store=VectorStoreConfig(
                 provider=vector_store_provider,
@@ -230,7 +259,7 @@ class AppConfig:
             database=DatabaseConfig(
                 db_path=os.getenv("SQLITE_DB_PATH", "./data/metadata.db")
             ),
-            extraction=ExtractionConfig(
+            extraction=ExtractionSettings(
                 default_strategy=os.getenv("EXTRACTION_STRATEGY", "openpyxl"),
                 max_rows_per_sheet=int(os.getenv("MAX_ROWS_PER_SHEET", "10000")),
                 max_file_size_mb=int(os.getenv("MAX_FILE_SIZE_MB", "100")),
@@ -291,7 +320,13 @@ class AppConfig:
                 fuzzy_match_threshold=float(os.getenv("FUZZY_MATCH_THRESHOLD", "0.85")),
                 preprocess_before_embedding=os.getenv("PREPROCESS_BEFORE_EMBEDDING", "true").lower() == "true"
             ),
-            cache=cls._load_cache_config()
+            cache=cls._load_cache_config(),
+            conversation=ConversationConfig(
+                session_timeout_seconds=int(os.getenv("SESSION_TIMEOUT_SECONDS", "1800")),
+                max_messages_per_session=int(os.getenv("MAX_MESSAGES_PER_SESSION", "100")),
+                max_files_per_session=int(os.getenv("MAX_FILES_PER_SESSION", "10")),
+                cache_prefix=os.getenv("CONVERSATION_CACHE_PREFIX", "conversation:session:")
+            )
         )
     
     @classmethod
@@ -378,7 +413,7 @@ class AppConfig:
         # Validate numeric ranges
         if self.indexing.max_concurrent_files < 1:
             errors.append("MAX_CONCURRENT_FILES must be at least 1")
-        if self.indexing.max_rows_per_sheet < 100:
+        if self.extraction.max_rows_per_sheet < 100:
             errors.append("MAX_ROWS_PER_SHEET must be at least 100")
         if self.indexing.batch_size < 1:
             errors.append("BATCH_SIZE must be at least 1")

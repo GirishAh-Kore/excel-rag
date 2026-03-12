@@ -1,5 +1,13 @@
 """Data models and schemas"""
 
+from .chunk_visibility import (
+    ChunkDetails,
+    ChunkFeedback,
+    ChunkFilters,
+    ChunkVersion,
+    ExtractionMetadata,
+    PaginatedChunkResponse,
+)
 from .domain_models import (
     AlignedData,
     CellData,
@@ -18,8 +26,51 @@ from .domain_models import (
     SheetSelection,
     WorkbookData,
 )
+from .enterprise import (
+    AccessAuditLog,
+    AccessControlEntry,
+    BatchQueryRequest,
+    BatchQueryStatus,
+    QueryTemplate,
+    UserRole,
+    VALID_WEBHOOK_EVENTS,
+    WebhookDelivery,
+    WebhookRegistration,
+)
+from .excel_features import (
+    ChartInfo,
+    ConditionalFormat,
+    DataValidation,
+    EnhancedExtractionResult,
+    ExcelTable,
+    ExtractedSheetData,
+    ExtractionQuality,
+    ExtractionWarning,
+    FormulaCell,
+    MergedCellInfo,
+    NamedRange,
+    PivotTableInfo,
+)
+from .query_pipeline import (
+    Citation,
+    ClarificationRequest,
+    ConfidenceBreakdown,
+    FileCandidate,
+    QueryClassification,
+    QueryResponse,
+    QueryType,
+    SheetCandidate,
+)
 
 __all__ = [
+    # Chunk visibility models
+    "ChunkDetails",
+    "ChunkFeedback",
+    "ChunkFilters",
+    "ChunkVersion",
+    "ExtractionMetadata",
+    "PaginatedChunkResponse",
+    # Domain models
     "AlignedData",
     "CellData",
     "ChartData",
@@ -36,4 +87,36 @@ __all__ = [
     "SheetData",
     "SheetSelection",
     "WorkbookData",
+    # Enterprise models
+    "AccessAuditLog",
+    "AccessControlEntry",
+    "BatchQueryRequest",
+    "BatchQueryStatus",
+    "QueryTemplate",
+    "UserRole",
+    "VALID_WEBHOOK_EVENTS",
+    "WebhookDelivery",
+    "WebhookRegistration",
+    # Excel features models
+    "ChartInfo",
+    "ConditionalFormat",
+    "DataValidation",
+    "EnhancedExtractionResult",
+    "ExcelTable",
+    "ExtractedSheetData",
+    "ExtractionQuality",
+    "ExtractionWarning",
+    "FormulaCell",
+    "MergedCellInfo",
+    "NamedRange",
+    "PivotTableInfo",
+    # Query pipeline models
+    "Citation",
+    "ClarificationRequest",
+    "ConfidenceBreakdown",
+    "FileCandidate",
+    "QueryClassification",
+    "QueryResponse",
+    "QueryType",
+    "SheetCandidate",
 ]

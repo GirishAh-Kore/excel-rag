@@ -66,7 +66,8 @@ class VectorStorageManager:
             "has_dates": "bool",
             "has_numbers": "bool",
             "has_pivot_tables": "bool",
-            "has_charts": "bool"
+            "has_charts": "bool",
+            "detected_language": "string"
         }
         
         pivots_schema = {
@@ -77,7 +78,8 @@ class VectorStorageManager:
             "content_type": "string",
             "pivot_name": "string",
             "row_fields": "string",
-            "data_fields": "string"
+            "data_fields": "string",
+            "detected_language": "string"
         }
         
         charts_schema = {
@@ -88,7 +90,8 @@ class VectorStorageManager:
             "content_type": "string",
             "chart_name": "string",
             "chart_type": "string",
-            "chart_title": "string"
+            "chart_title": "string",
+            "detected_language": "string"
         }
         
         # Create collections

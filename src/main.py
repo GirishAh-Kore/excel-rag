@@ -60,7 +60,15 @@ app = FastAPI(
 
 # Add CORS middleware
 config = get_config()
-allowed_origins = ["*"] if config.env == "development" else config.api.cors_origins
+
+# Use explicit development origins instead of wildcard for security
+DEV_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",  # Vite default
+    "http://127.0.0.1:5173",
+]
+allowed_origins = DEV_ORIGINS if config.env == "development" else config.api.cors_origins
 
 app.add_middleware(
     CORSMiddleware,
@@ -169,7 +177,7 @@ async def health_check():
         "vector_store": config.vector_store.provider,
         "embedding_service": config.embedding.provider,
         "llm_service": config.llm.provider,
-        "cache_service": config.cache.provider
+        "cache_service": config.cache.backend
     }
     
     # Check if authenticated
@@ -210,6 +218,15 @@ from src.api.indexing import router as indexing_router
 from src.api.query import router as query_router
 from src.api.metrics import router as metrics_router
 
+# Excel Query Pipeline routes (Requirements 13.1-13.6, 14.1-14.6)
+from src.api.routes import (
+    batch_router,
+    chunks_router,
+    export_router,
+    intelligence_router,
+    query_router as pipeline_query_router,
+)
+
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Google Drive Authentication"])
 app.include_router(web_auth_router, prefix="/api/auth", tags=["Web Authentication"])
 app.include_router(files_router, prefix="/api/files", tags=["File Management"])
@@ -218,6 +235,13 @@ app.include_router(chat_router, prefix="/api/chat", tags=["Chat Sessions"])
 app.include_router(indexing_router, prefix="/api/v1/index", tags=["Indexing"])
 app.include_router(query_router, prefix="/api/v1/query", tags=["Query"])
 app.include_router(metrics_router, prefix="/api/v1", tags=["Metrics"])
+
+# Excel Query Pipeline routes (already have /api/v1 prefix defined)
+app.include_router(chunks_router)  # Chunk visibility endpoints
+app.include_router(pipeline_query_router)  # Query pipeline endpoints
+app.include_router(batch_router)  # Batch and template endpoints
+app.include_router(export_router)  # Export and webhook endpoints
+app.include_router(intelligence_router)  # Intelligence feature endpoints
 
 
 # ============================================================================

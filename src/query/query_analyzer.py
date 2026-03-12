@@ -166,10 +166,11 @@ class QueryAnalyzer:
                 except Exception as e:
                     logger.warning(f"HyDE expansion skipped: {e}")
 
-            # Combine results
+            # Combine results - ensure intent is never None
+            intent = llm_analysis.get("intent") or "retrieve_value"
             analysis = QueryAnalysis(
                 entities=llm_analysis.get("entities", []),
-                intent=llm_analysis.get("intent", "retrieve_value"),
+                intent=intent,
                 temporal_refs=temporal_refs,
                 comparison_type=llm_analysis.get("comparison_type") if is_comparison else None,
                 is_comparison=is_comparison,
@@ -384,7 +385,21 @@ confidence: 0.0-1.0"""
                 system_prompt=system_prompt,
                 pydantic_model=_LLMAnalysis
             )
-            return result
+            # Convert Pydantic model to dict if needed
+            if hasattr(result, 'model_dump'):
+                return result.model_dump()
+            elif hasattr(result, 'dict'):
+                return result.dict()
+            elif isinstance(result, dict):
+                return result
+            else:
+                # Fallback: try to extract attributes
+                return {
+                    "entities": getattr(result, 'entities', []),
+                    "intent": getattr(result, 'intent', "retrieve_value"),
+                    "comparison_type": getattr(result, 'comparison_type', None),
+                    "confidence": getattr(result, 'confidence', 0.6)
+                }
         except Exception as e:
             logger.warning(f"LLM structured analysis failed, using fallback: {e}")
             return {

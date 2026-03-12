@@ -25,7 +25,33 @@ from src.extraction.extraction_strategy import (
     ExtractionQuality,
     ExtractionStrategy,
 )
+from src.extraction.quality_scorer import (
+    ExtractionQualityScorer,
+    QualityAssessment,
+    QualityScorerConfig,
+)
 from src.extraction.sheet_summarizer import SheetSummarizer
+from src.extraction.streaming import (
+    ChunkAggregator,
+    StreamingChunk,
+    StreamingExcelExtractor,
+    StreamingExtractionConfig,
+    StreamingExtractionResult,
+    create_streaming_extractor,
+)
+from src.extraction.incremental import (
+    ChecksumCalculator,
+    ChunkChangeResult,
+    ChunkChangeType,
+    ChunkChecksum,
+    FileChangeResult,
+    FileChangeType,
+    FileChecksum,
+    IncrementalIndexingResult,
+    IncrementalIndexingService,
+    InMemoryChecksumStore,
+    create_incremental_indexing_service,
+)
 
 __all__ = [
     # Core extractors
@@ -43,6 +69,32 @@ __all__ = [
     "ExtractionStrategy",
     "ExtractionQuality",
     
+    # Quality scoring
+    "ExtractionQualityScorer",
+    "QualityScorerConfig",
+    "QualityAssessment",
+    
     # Summarization
     "SheetSummarizer",
+    
+    # Streaming extraction
+    "StreamingExcelExtractor",
+    "StreamingExtractionConfig",
+    "StreamingExtractionResult",
+    "StreamingChunk",
+    "ChunkAggregator",
+    "create_streaming_extractor",
+    
+    # Incremental indexing
+    "IncrementalIndexingService",
+    "IncrementalIndexingResult",
+    "FileChecksum",
+    "ChunkChecksum",
+    "FileChangeResult",
+    "ChunkChangeResult",
+    "FileChangeType",
+    "ChunkChangeType",
+    "ChecksumCalculator",
+    "InMemoryChecksumStore",
+    "create_incremental_indexing_service",
 ]

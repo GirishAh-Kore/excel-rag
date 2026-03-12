@@ -22,12 +22,13 @@ export interface AuthStatus {
 // File types
 export interface FileMetadata {
   file_id: string;
-  name: string;
-  path: string;
+  filename: string;
+  file_path: string;
   size: number;
-  modified_time: string;
+  uploaded_at: string;
   indexed_at?: string;
   status: 'indexed' | 'pending' | 'failed';
+  sheets_count?: number;
 }
 
 export interface UploadProgress {
@@ -84,7 +85,7 @@ export interface Session {
   session_id: string;
   created_at: string;
   last_activity: string;
-  message_count: number;
+  query_count: number;
 }
 
 // API Error types

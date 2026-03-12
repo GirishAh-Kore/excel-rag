@@ -80,7 +80,7 @@ const IndexedFilesList = () => {
   };
 
   const filteredFiles = files.filter((file) =>
-    file.name.toLowerCase().includes(search.toLowerCase())
+    file.filename?.toLowerCase().includes(search.toLowerCase()) ?? false
   );
 
   const getStatusColor = (status: string) => {
@@ -149,10 +149,10 @@ const IndexedFilesList = () => {
                   ) : (
                     filteredFiles.map((file) => (
                       <TableRow key={file.file_id}>
-                        <TableCell>{file.name}</TableCell>
+                        <TableCell>{file.filename}</TableCell>
                         <TableCell>
                           <Typography variant="body2" color="text.secondary" noWrap>
-                            {file.path}
+                            {file.file_path}
                           </Typography>
                         </TableCell>
                         <TableCell>

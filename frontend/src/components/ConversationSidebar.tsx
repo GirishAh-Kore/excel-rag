@@ -84,7 +84,7 @@ const ConversationSidebar = ({
                 >
                   <ListItemText
                     primary={`Session ${session.session_id.slice(0, 8)}`}
-                    secondary={`${session.message_count} messages`}
+                    secondary={`${session.query_count} queries`}
                     primaryTypographyProps={{ noWrap: true }}
                   />
                 </ListItemButton>

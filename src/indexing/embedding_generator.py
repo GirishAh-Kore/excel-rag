@@ -125,13 +125,17 @@ class EmbeddingGenerator:
         all_ids = []
         all_metadata = []
         
+        # Get detected language from workbook (defaults to "en" if not set)
+        detected_language = getattr(workbook_data, 'detected_language', 'en')
+        
         # Generate embeddings for each sheet
         for sheet in workbook_data.sheets:
             texts, ids, metadata = self._generate_sheet_texts(
                 sheet=sheet,
                 file_id=workbook_data.file_id,
                 file_name=workbook_data.file_name,
-                file_path=workbook_data.file_path
+                file_path=workbook_data.file_path,
+                detected_language=detected_language
             )
             all_texts.extend(texts)
             all_ids.extend(ids)
@@ -159,7 +163,8 @@ class EmbeddingGenerator:
         sheet: SheetData,
         file_id: str,
         file_name: str,
-        file_path: str
+        file_path: str,
+        detected_language: str = "en"
     ) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
         """
         Generate embedding texts for a single sheet.
@@ -175,6 +180,7 @@ class EmbeddingGenerator:
             file_id: File ID
             file_name: File name
             file_path: File path
+            detected_language: ISO 639-1 language code detected for the workbook
             
         Returns:
             Tuple of (texts, ids, metadata)
@@ -202,7 +208,8 @@ class EmbeddingGenerator:
                     "has_pivot_tables": sheet.has_pivot_tables,
                     "has_charts": sheet.has_charts,
                     "chunk_start_row": chunk["start_row"],
-                    "chunk_end_row": chunk["end_row"]
+                    "chunk_end_row": chunk["end_row"],
+                    "detected_language": detected_language
                 }
                 texts.append(chunk["text"])
                 ids.append(chunk_id)
@@ -222,7 +229,8 @@ class EmbeddingGenerator:
                 "has_dates": sheet.has_dates,
                 "has_numbers": sheet.has_numbers,
                 "has_pivot_tables": sheet.has_pivot_tables,
-                "has_charts": sheet.has_charts
+                "has_charts": sheet.has_charts,
+                "detected_language": detected_language
             }
             texts.append(overview_text)
             ids.append(overview_id)
@@ -234,7 +242,8 @@ class EmbeddingGenerator:
                 sheet=sheet,
                 file_id=file_id,
                 file_name=file_name,
-                file_path=file_path
+                file_path=file_path,
+                detected_language=detected_language
             )
             texts.extend(column_texts)
             ids.extend(column_ids)
@@ -252,7 +261,8 @@ class EmbeddingGenerator:
                 "content_type": "pivot_table",
                 "pivot_name": pivot.name,
                 "row_fields": ",".join(pivot.row_fields),
-                "data_fields": ",".join(pivot.data_fields)
+                "data_fields": ",".join(pivot.data_fields),
+                "detected_language": detected_language
             }
             
             texts.append(pivot_text)
@@ -271,7 +281,8 @@ class EmbeddingGenerator:
                 "content_type": "chart",
                 "chart_name": chart.name,
                 "chart_type": chart.chart_type,
-                "chart_title": chart.title or ""
+                "chart_title": chart.title or "",
+                "detected_language": detected_language
             }
             
             texts.append(chart_text)
@@ -310,7 +321,8 @@ class EmbeddingGenerator:
         sheet: SheetData,
         file_id: str,
         file_name: str,
-        file_path: str
+        file_path: str,
+        detected_language: str = "en"
     ) -> Tuple[List[str], List[str], List[Dict[str, Any]]]:
         """Create column-wise summaries for numerical data"""
         texts = []
@@ -352,7 +364,8 @@ class EmbeddingGenerator:
                     "data_type": "number",
                     "min_value": min_val,
                     "max_value": max_val,
-                    "avg_value": avg_val
+                    "avg_value": avg_val,
+                    "detected_language": detected_language
                 }
                 
                 texts.append(text)

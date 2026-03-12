@@ -193,6 +193,10 @@ class WorkbookData(BaseModel):
     has_charts: bool = Field(default=False, description="Whether workbook has any charts")
     total_pivot_tables: int = Field(default=0, ge=0, description="Total number of pivot tables")
     total_charts: int = Field(default=0, ge=0, description="Total number of charts")
+    detected_language: str = Field(
+        default="en",
+        description="Primary language detected in workbook content (ISO 639-1 code)"
+    )
 
     def model_post_init(self, __context):
         """Set aggregated flags and counts after model initialization."""

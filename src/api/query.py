@@ -24,18 +24,16 @@ from src.api.models import (
 from src.api.dependencies import (
     get_query_engine,
     get_generation_llm_service,
-    require_authentication,
+    get_conversation_manager,
     get_correlation_id
 )
+from src.api.web_auth import get_current_user
 from src.query.query_engine import QueryEngine
+from src.query.conversation_manager import ConversationManager
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-# In-memory storage (in production, use Redis or database)
-query_history: Dict[str, List[Dict[str, Any]]] = {}  # {session_id: [queries]}
-session_contexts: Dict[str, Dict[str, Any]] = {}  # {session_id: context}
 
 
 @router.post(
@@ -52,7 +50,8 @@ session_contexts: Dict[str, Dict[str, Any]] = {}  # {session_id: context}
 async def query(
     request: QueryRequest,
     query_engine: QueryEngine = Depends(get_query_engine),
-    auth_service = Depends(require_authentication),
+    conversation_manager: ConversationManager = Depends(get_conversation_manager),
+    current_user: str = Depends(get_current_user),
     correlation_id: str = Depends(get_correlation_id)
 ):
     """
@@ -76,77 +75,70 @@ async def query(
             }
         )
         
-        # Process query
-        result = await query_engine.process_query(
-            query=request.query,
+        # Ensure session exists
+        if not conversation_manager.session_exists(session_id):
+            conversation_manager.create_session(session_id)
+        
+        # Add user message to conversation history
+        conversation_manager.add_message(
             session_id=session_id,
-            language=request.language
+            role="user",
+            content=request.query
+        )
+        
+        # Process query (synchronous method)
+        result = query_engine.process_query(
+            query=request.query,
+            session_id=session_id
         )
         
         # Calculate processing time
         processing_time_ms = (time.time() - start_time) * 1000
         
-        # Generate query ID
-        query_id = str(uuid.uuid4())
+        # Build response - result is a QueryResult Pydantic model
+        sources = []
+        for s in result.sources:
+            file_name = getattr(s, 'file_name', '')
+            sheet_name = getattr(s, 'sheet_name', '')
+            cell_range = getattr(s, 'cell_range', None)
+            
+            # Generate citation text from available fields
+            citation_parts = [file_name]
+            if sheet_name:
+                citation_parts.append(f"Sheet: {sheet_name}")
+            if cell_range:
+                citation_parts.append(f"Range: {cell_range}")
+            citation_text = " | ".join(citation_parts)
+            
+            sources.append(SourceCitation(
+                file_name=file_name,
+                file_path=getattr(s, 'file_path', ''),
+                sheet_name=sheet_name,
+                cell_range=cell_range,
+                citation_text=citation_text
+            ))
         
-        # Store in history
-        if session_id not in query_history:
-            query_history[session_id] = []
-        
-        query_history[session_id].append({
-            'query_id': query_id,
-            'query': request.query,
-            'answer': result.get('answer'),
-            'confidence': result.get('confidence', 0),
-            'timestamp': datetime.utcnow(),
-            'session_id': session_id
-        })
-        
-        # Update session context
-        if session_id not in session_contexts:
-            session_contexts[session_id] = {
-                'session_id': session_id,
-                'created_at': datetime.utcnow(),
-                'last_activity': datetime.utcnow(),
-                'selected_files': []
-            }
-        else:
-            session_contexts[session_id]['last_activity'] = datetime.utcnow()
-        
-        # Add selected files to context
-        if result.get('sources'):
-            for source in result['sources']:
-                file_name = source.get('file_name')
-                if file_name and file_name not in session_contexts[session_id]['selected_files']:
-                    session_contexts[session_id]['selected_files'].append(file_name)
-        
-        # Build response
-        response = QueryResponse(
-            answer=result.get('answer'),
-            sources=[
-                SourceCitation(
-                    file_name=s.get('file_name', ''),
-                    file_path=s.get('file_path', ''),
-                    sheet_name=s.get('sheet_name', ''),
-                    cell_range=s.get('cell_range'),
-                    citation_text=s.get('citation_text', '')
-                )
-                for s in result.get('sources', [])
-            ],
-            confidence=result.get('confidence', 0),
+        # Add assistant response to conversation history
+        conversation_manager.add_message(
             session_id=session_id,
-            requires_clarification=result.get('requires_clarification', False),
-            clarification_question=result.get('clarification_question'),
-            clarification_options=[
-                ClarificationOption(
-                    option_id=opt.get('option_id', ''),
-                    description=opt.get('description', ''),
-                    file_name=opt.get('file_name'),
-                    confidence=opt.get('confidence', 0)
-                )
-                for opt in result.get('clarification_options', [])
-            ],
-            query_language=result.get('query_language', 'en'),
+            role="assistant",
+            content=result.answer,
+            metadata={
+                "confidence": result.confidence,
+                "sources": [s.file_name for s in sources],
+                "requires_clarification": result.clarification_needed
+            }
+        )
+        
+        response = QueryResponse(
+            answer=result.answer,
+            sources=sources,
+            confidence=result.confidence,
+            session_id=session_id,
+            requires_clarification=result.clarification_needed,
+            clarification_question=result.clarifying_questions[0] if result.clarifying_questions else None,
+            clarification_options=[],
+            query_language='en',
             processing_time_ms=processing_time_ms
         )
         
@@ -182,7 +174,8 @@ async def query(
         401: {"model": ErrorResponse, "description": "Authentication required"},
         400: {"model": ErrorResponse, "description": "Invalid request"},
         404: {"model": ErrorResponse, "description": "Session not found"},
-        500: {"model": ErrorResponse, "description": "Internal server error"}
+        500: {"model": ErrorResponse, "description": "Internal server error"},
+        501: {"model": ErrorResponse, "description": "Not implemented"}
     },
     summary="Respond to clarification question",
     description="Provides user's selection for a clarification question"
@@ -190,7 +183,8 @@ async def query(
 async def clarify(
     request: ClarificationRequest,
     query_engine: QueryEngine = Depends(get_query_engine),
-    auth_service = Depends(require_authentication),
+    conversation_manager: ConversationManager = Depends(get_conversation_manager),
+    current_user: str = Depends(get_current_user),
     correlation_id: str = Depends(get_correlation_id)
 ):
     """
@@ -210,48 +204,58 @@ async def clarify(
             }
         )
         
-        # Check if session exists
-        if request.session_id not in session_contexts:
+        # Check if session exists using ConversationManager
+        if not conversation_manager.session_exists(request.session_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Session {request.session_id} not found"
             )
         
-        # Process clarification
-        result = await query_engine.process_clarification(
+        # Add clarification response as user message
+        conversation_manager.add_message(
             session_id=request.session_id,
-            selected_option_id=request.selected_option_id
+            role="user",
+            content=f"Selected option: {request.selected_option_id}",
+            metadata={"type": "clarification_response"}
         )
         
-        # Calculate processing time
+        # TODO: Implement full clarification flow
+        # The QueryEngine.handle_clarification_response method requires:
+        # - ClarificationRequest object (from clarification_generator)
+        # - user_response string
+        # This needs to be stored in session context when clarification is requested
+        
         processing_time_ms = (time.time() - start_time) * 1000
         
-        # Build response
+        # Return placeholder response indicating selection was received
+        answer = (
+            f"You selected option: {request.selected_option_id}. "
+            f"Full clarification processing will be available in a future update."
+        )
+        
+        # Add assistant response
+        conversation_manager.add_message(
+            session_id=request.session_id,
+            role="assistant",
+            content=answer,
+            metadata={"type": "clarification_acknowledgment"}
+        )
+        
         response = QueryResponse(
-            answer=result.get('answer'),
-            sources=[
-                SourceCitation(
-                    file_name=s.get('file_name', ''),
-                    file_path=s.get('file_path', ''),
-                    sheet_name=s.get('sheet_name', ''),
-                    cell_range=s.get('cell_range'),
-                    citation_text=s.get('citation_text', '')
-                )
-                for s in result.get('sources', [])
-            ],
-            confidence=result.get('confidence', 0),
+            answer=answer,
+            sources=[],
+            confidence=0.5,
             session_id=request.session_id,
             requires_clarification=False,
-            query_language=result.get('query_language', 'en'),
+            query_language='en',
             processing_time_ms=processing_time_ms
         )
         
         logger.info(
-            f"Clarification processed successfully",
+            f"Clarification response recorded",
             extra={
                 'correlation_id': correlation_id,
-                'session_id': request.session_id,
-                'confidence': response.confidence
+                'session_id': request.session_id
             }
         )
         
@@ -285,7 +289,8 @@ async def get_history(
     limit: int = QueryParam(10, ge=1, le=100, description="Maximum number of queries to return"),
     offset: int = QueryParam(0, ge=0, description="Number of queries to skip"),
     session_id: str = QueryParam(None, description="Filter by session ID"),
-    auth_service = Depends(require_authentication),
+    conversation_manager: ConversationManager = Depends(get_conversation_manager),
+    current_user: str = Depends(get_current_user),
     correlation_id: str = Depends(get_correlation_id)
 ):
     """
@@ -304,38 +309,60 @@ async def get_history(
             }
         )
         
-        # Collect all queries
-        all_queries = []
+        all_queries: List[QueryHistoryItem] = []
         
         if session_id:
-            # Filter by session
-            if session_id in query_history:
-                all_queries = query_history[session_id]
+            # Get history for specific session
+            messages = conversation_manager.get_messages(session_id)
+            for i, msg in enumerate(messages):
+                if msg.get('role') == 'user':
+                    # Find corresponding assistant response
+                    answer = None
+                    confidence = 0.0
+                    if i + 1 < len(messages) and messages[i + 1].get('role') == 'assistant':
+                        answer = messages[i + 1].get('content')
+                        confidence = messages[i + 1].get('metadata', {}).get('confidence', 0.0)
+                    
+                    all_queries.append(QueryHistoryItem(
+                        query_id=msg.get('message_id', ''),
+                        query=msg.get('content', ''),
+                        answer=answer,
+                        confidence=confidence,
+                        timestamp=datetime.fromisoformat(msg['timestamp']) if isinstance(msg.get('timestamp'), str) else msg.get('timestamp', datetime.utcnow()),
+                        session_id=session_id
+                    ))
         else:
-            # Get all queries from all sessions
-            for queries in query_history.values():
-                all_queries.extend(queries)
+            # Get all sessions and their queries
+            sessions = conversation_manager.get_all_sessions()
+            for sess in sessions:
+                sess_id = sess.get('session_id')
+                messages = conversation_manager.get_messages(sess_id)
+                for i, msg in enumerate(messages):
+                    if msg.get('role') == 'user':
+                        answer = None
+                        confidence = 0.0
+                        if i + 1 < len(messages) and messages[i + 1].get('role') == 'assistant':
+                            answer = messages[i + 1].get('content')
+                            confidence = messages[i + 1].get('metadata', {}).get('confidence', 0.0)
+                        
+                        all_queries.append(QueryHistoryItem(
+                            query_id=msg.get('message_id', ''),
+                            query=msg.get('content', ''),
+                            answer=answer,
+                            confidence=confidence,
+                            timestamp=datetime.fromisoformat(msg['timestamp']) if isinstance(msg.get('timestamp'), str) else msg.get('timestamp', datetime.utcnow()),
+                            session_id=sess_id
+                        ))
         
         # Sort by timestamp (newest first)
-        all_queries.sort(key=lambda q: q['timestamp'], reverse=True)
+        all_queries.sort(key=lambda q: q.timestamp, reverse=True)
         
         # Apply pagination
         total = len(all_queries)
         paginated_queries = all_queries[offset:offset + limit]
         
-        # Build response
         return QueryHistoryResponse(
-            queries=[
-                QueryHistoryItem(
-                    query_id=q['query_id'],
-                    query=q['query'],
-                    answer=q.get('answer'),
-                    confidence=q['confidence'],
-                    timestamp=q['timestamp'],
-                    session_id=q['session_id']
-                )
-                for q in paginated_queries
-            ],
+            queries=paginated_queries,
             total=total,
             limit=limit,
             offset=offset
@@ -365,7 +392,8 @@ async def get_history(
 )
 async def clear_history(
     session_id: str = QueryParam(None, description="Clear specific session (or all if not provided)"),
-    auth_service = Depends(require_authentication),
+    conversation_manager: ConversationManager = Depends(get_conversation_manager),
+    current_user: str = Depends(get_current_user),
     correlation_id: str = Depends(get_correlation_id)
 ):
     """
@@ -383,17 +411,16 @@ async def clear_history(
         
         if session_id:
             # Clear specific session
-            if session_id in query_history:
-                queries_deleted = len(query_history[session_id])
-                del query_history[session_id]
-            if session_id in session_contexts:
-                del session_contexts[session_id]
+            session_history = conversation_manager.get_session_history(session_id)
+            if session_history:
+                queries_deleted = session_history.get('query_count', 0)
+                conversation_manager.delete_session(session_id)
         else:
             # Clear all sessions
-            for queries in query_history.values():
-                queries_deleted += len(queries)
-            query_history.clear()
-            session_contexts.clear()
+            sessions = conversation_manager.get_all_sessions()
+            for sess in sessions:
+                queries_deleted += sess.get('query_count', 0)
+                conversation_manager.delete_session(sess['session_id'])
         
         logger.info(
             f"Query history cleared",
@@ -434,7 +461,8 @@ async def clear_history(
 )
 async def get_session(
     session_id: str,
-    auth_service = Depends(require_authentication),
+    conversation_manager: ConversationManager = Depends(get_conversation_manager),
+    current_user: str = Depends(get_current_user),
     correlation_id: str = Depends(get_correlation_id)
 ):
     """
@@ -448,32 +476,42 @@ async def get_session(
             extra={'correlation_id': correlation_id, 'session_id': session_id}
         )
         
-        # Check if session exists
-        if session_id not in session_contexts:
+        # Get session history from ConversationManager
+        session_history = conversation_manager.get_session_history(session_id)
+        
+        if not session_history:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Session {session_id} not found"
             )
         
-        context = session_contexts[session_id]
-        queries = query_history.get(session_id, [])
+        # Build query history items from messages
+        queries: List[QueryHistoryItem] = []
+        messages = session_history.get('messages', [])
+        
+        for i, msg in enumerate(messages):
+            if msg.get('role') == 'user':
+                answer = None
+                confidence = 0.0
+                if i + 1 < len(messages) and messages[i + 1].get('role') == 'assistant':
+                    answer = messages[i + 1].get('content')
+                    confidence = messages[i + 1].get('metadata', {}).get('confidence', 0.0)
+                
+                queries.append(QueryHistoryItem(
+                    query_id=msg.get('message_id', ''),
+                    query=msg.get('content', ''),
+                    answer=answer,
+                    confidence=confidence,
+                    timestamp=datetime.fromisoformat(msg['timestamp']) if isinstance(msg.get('timestamp'), str) else msg.get('timestamp', datetime.utcnow()),
+                    session_id=session_id
+                ))
         
         return SessionContextResponse(
             session_id=session_id,
-            queries=[
-                QueryHistoryItem(
-                    query_id=q['query_id'],
-                    query=q['query'],
-                    answer=q.get('answer'),
-                    confidence=q['confidence'],
-                    timestamp=q['timestamp'],
-                    session_id=q['session_id']
-                )
-                for q in queries
-            ],
-            selected_files=context.get('selected_files', []),
-            created_at=context['created_at'],
-            last_activity=context['last_activity']
+            queries=queries,
+            selected_files=session_history.get('selected_files', []),
+            created_at=session_history.get('created_at', datetime.utcnow()),
+            last_activity=session_history.get('last_activity', datetime.utcnow())
         )
         
     except HTTPException:
@@ -503,13 +541,17 @@ async def get_session(
 )
 async def submit_feedback(
     request: QueryFeedbackRequest,
-    auth_service = Depends(require_authentication),
+    conversation_manager: ConversationManager = Depends(get_conversation_manager),
+    current_user: str = Depends(get_current_user),
     correlation_id: str = Depends(get_correlation_id)
 ):
     """
     Submit query feedback.
     
     Records user feedback on query results to improve future file selection.
+    
+    Note: Feedback is logged for analytics. Full preference learning
+    integration will be available in a future update.
     """
     try:
         logger.info(
@@ -521,33 +563,21 @@ async def submit_feedback(
             }
         )
         
-        # Find query in history
-        query_found = False
-        for queries in query_history.values():
-            for q in queries:
-                if q['query_id'] == request.query_id:
-                    q['feedback'] = {
-                        'helpful': request.helpful,
-                        'selected_file': request.selected_file,
-                        'comments': request.comments,
-                        'timestamp': datetime.utcnow()
-                    }
-                    query_found = True
-                    break
-            if query_found:
-                break
-        
-        if not query_found:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Query {request.query_id} not found"
-            )
-        
-        # TODO: Store feedback in preference manager for learning
+        # Log feedback for analytics (preference learning integration TODO)
+        # In a full implementation, this would:
+        # 1. Find the query by ID across sessions
+        # 2. Store feedback in a dedicated feedback store
+        # 3. Update preference models
         
         logger.info(
             f"Query feedback recorded",
-            extra={'correlation_id': correlation_id, 'query_id': request.query_id}
+            extra={
+                'correlation_id': correlation_id,
+                'query_id': request.query_id,
+                'helpful': request.helpful,
+                'selected_file': request.selected_file,
+                'has_comments': bool(request.comments)
+            }
         )
         
         return QueryFeedbackResponse(
@@ -555,8 +585,6 @@ async def submit_feedback(
             message="Feedback recorded successfully"
         )
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(
             f"Error recording feedback: {e}",
@@ -582,7 +610,7 @@ async def submit_feedback(
 async def stream_query(
     request: QueryRequest,
     llm_service=Depends(get_generation_llm_service),
-    auth_service=Depends(require_authentication),
+    current_user: str = Depends(get_current_user),
     correlation_id: str = Depends(get_correlation_id)
 ):
     """

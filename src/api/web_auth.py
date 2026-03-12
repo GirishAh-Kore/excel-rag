@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordBearer
 from pydantic import BaseModel
 import jwt
 from src.utils.logging_config import get_logger
@@ -13,6 +13,8 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 security = HTTPBearer()
+# Optional security for status endpoint
+optional_security = HTTPBearer(auto_error=False)
 
 # Hardcoded credentials for local deployment
 WEB_USERNAME = "girish"
@@ -169,7 +171,7 @@ async def logout(current_user: str = Depends(get_current_user)):
 
 
 @router.get("/status", response_model=StatusResponse)
-async def get_status(credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
+async def get_status(credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security)):
     """
     Check authentication status
     

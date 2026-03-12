@@ -9,7 +9,7 @@ import io
 import logging
 from datetime import datetime
 from dateutil import parser as date_parser
-from typing import Any, BinaryIO, Dict, List, Optional, Tuple, Union
+from typing import Any, BinaryIO, Dict, List, Optional, Tuple, TYPE_CHECKING, Union
 
 import openpyxl
 from openpyxl.cell.cell import Cell
@@ -31,6 +31,9 @@ from src.models.domain_models import (
     SheetData,
     WorkbookData,
 )
+
+if TYPE_CHECKING:
+    from src.extraction.language_detection import ExcelLanguageDetectionService
 
 logger = logging.getLogger(__name__)
 
@@ -63,16 +66,29 @@ class ContentExtractor:
     of cell data, formulas, formatting, pivot tables, and charts.
     """
     
-    def __init__(self, max_rows_per_sheet: int = 10000):
+    def __init__(
+        self,
+        max_rows_per_sheet: int = 10000,
+        language_detection_service: Optional["ExcelLanguageDetectionService"] = None
+    ):
         """
         Initialize the content extractor.
         
         Args:
             max_rows_per_sheet: Maximum number of rows to process per sheet
+            language_detection_service: Optional language detection service.
+                Creates default if not provided.
         """
         self.max_rows_per_sheet = max_rows_per_sheet
         self.logger = logging.getLogger(__name__)
         self.failed_files = []  # Track failed files for reporting
+        
+        # Initialize language detection service
+        if language_detection_service is None:
+            from src.extraction.language_detection import ExcelLanguageDetectionService
+            self._language_service = ExcelLanguageDetectionService()
+        else:
+            self._language_service = language_detection_service
     
     def extract_workbook(
         self,
@@ -183,13 +199,17 @@ class ContentExtractor:
                 self._track_failed_file(file_id, file_name, "no_sheets_extracted", error_msg)
                 raise CorruptedFileError(error_msg)
             
+            # Detect primary language from extracted sheets
+            detected_language = self._detect_workbook_language(sheets)
+            
             # Create workbook data (may have partial results)
             workbook_data = WorkbookData(
                 file_id=file_id,
                 file_name=file_name,
                 file_path=file_path,
                 sheets=sheets,
-                modified_time=modified_time
+                modified_time=modified_time,
+                detected_language=detected_language
             )
             
             # Log success with any warnings
@@ -197,7 +217,8 @@ class ContentExtractor:
                 f"Successfully extracted workbook {file_name}: "
                 f"{len(sheets)} sheets, "
                 f"{workbook_data.total_pivot_tables} pivot tables, "
-                f"{workbook_data.total_charts} charts"
+                f"{workbook_data.total_charts} charts, "
+                f"language={detected_language}"
             )
             if sheet_errors:
                 log_msg += f". Warnings: {len(sheet_errors)} sheets had errors"
@@ -247,6 +268,48 @@ class ContentExtractor:
     def clear_failed_files(self) -> None:
         """Clear the failed files list."""
         self.failed_files.clear()
+    
+    def _detect_workbook_language(self, sheets: List[SheetData]) -> str:
+        """
+        Detect the primary language of workbook content from extracted sheets.
+        
+        Analyzes headers and data from all sheets to determine the primary
+        language of the workbook content.
+        
+        Args:
+            sheets: List of extracted sheet data.
+            
+        Returns:
+            ISO 639-1 language code (e.g., "en", "th", "mixed").
+        
+        Supports Requirement 23.1: Detect the primary language of Excel content.
+        """
+        if not sheets:
+            return "en"  # Default to English
+        
+        # Collect text samples from all sheets
+        all_headers: List[str] = []
+        all_rows: List[Dict[str, Any]] = []
+        
+        for sheet in sheets:
+            if sheet.headers:
+                all_headers.extend(sheet.headers)
+            if sheet.rows:
+                # Sample first 50 rows per sheet
+                all_rows.extend(sheet.rows[:50])
+        
+        # Use language detection service
+        detected_language = self._language_service.detect_from_sheet_data(
+            headers=all_headers,
+            rows=all_rows,
+            sample_size=100
+        )
+        
+        self.logger.debug(
+            f"Detected language '{detected_language}' from {len(sheets)} sheets"
+        )
+        
+        return detected_language
     
     def _load_xlsx_workbook(self, file_content: bytes, file_name: str) -> openpyxl.Workbook:
         """

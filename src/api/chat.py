@@ -117,7 +117,7 @@ async def submit_query(
         # Generate session ID if not provided
         session_id = request.session_id or str(uuid.uuid4())
         
-        # Process query
+        # Process query (synchronous method, returns QueryResult Pydantic model)
         start_time = datetime.utcnow()
         result = query_engine.process_query(
             query=request.query,
@@ -126,44 +126,58 @@ async def submit_query(
         processing_time = (datetime.utcnow() - start_time).total_seconds() * 1000
         
         # Convert sources to response model
+        # result.sources is a list of RetrievedData objects
         sources = []
-        for source in result.get("sources", []):
+        for source in result.sources:
+            file_name = getattr(source, "file_name", "")
+            sheet_name = getattr(source, "sheet_name", "")
+            cell_range = getattr(source, "cell_range", None)
+            
+            # Generate citation text from available fields
+            citation_parts = [file_name]
+            if sheet_name:
+                citation_parts.append(f"Sheet: {sheet_name}")
+            if cell_range:
+                citation_parts.append(f"Range: {cell_range}")
+            citation_text = " | ".join(citation_parts)
+            
             sources.append(SourceCitation(
-                file_name=source.get("file_name", ""),
-                file_path=source.get("file_path", ""),
-                sheet_name=source.get("sheet_name", ""),
-                cell_range=source.get("cell_range"),
-                citation_text=source.get("citation_text", "")
+                file_name=file_name,
+                file_path=getattr(source, "file_path", ""),
+                sheet_name=sheet_name,
+                cell_range=cell_range,
+                citation_text=citation_text
             ))
         
-        # Store in conversation history
+        # Store user message in conversation history
         conversation_manager.add_message(
             session_id=session_id,
             role="user",
             content=request.query
         )
         
-        if result.get("answer"):
+        # Store assistant response in conversation history
+        if result.answer:
             conversation_manager.add_message(
                 session_id=session_id,
                 role="assistant",
-                content=result["answer"],
+                content=result.answer,
                 metadata={
-                    "sources": [s.dict() for s in sources],
-                    "confidence": result.get("confidence", 0)
+                    "sources": [s.model_dump() for s in sources],
+                    "confidence": result.confidence
                 }
             )
         
-        logger.info(f"Query processed in {processing_time:.2f}ms, confidence: {result.get('confidence', 0)}")
+        logger.info(f"Query processed in {processing_time:.2f}ms, confidence: {result.confidence}")
         
         return ChatQueryResponse(
-            answer=result.get("answer"),
+            answer=result.answer,
             sources=sources,
-            confidence=result.get("confidence", 0),
+            confidence=result.confidence,
             session_id=session_id,
-            requires_clarification=result.get("requires_clarification", False),
-            clarification_question=result.get("clarification_question"),
-            clarification_options=result.get("clarification_options", []),
+            requires_clarification=result.clarification_needed,
+            clarification_question=result.clarifying_questions[0] if result.clarifying_questions else None,
+            clarification_options=[],  # QueryResult doesn't have structured clarification options
             processing_time_ms=processing_time
         )
     

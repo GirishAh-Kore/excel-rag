@@ -54,7 +54,8 @@ class QueryEngine:
         llm_service: LLMService,
         embedding_service: EmbeddingService,
         cache_service: CacheService,
-        vector_storage: VectorStorageManager
+        vector_storage: VectorStorageManager,
+        conversation_manager: ConversationManager
     ):
         """
         Initialize QueryEngine with all required services.
@@ -64,6 +65,7 @@ class QueryEngine:
             embedding_service: Embedding service for semantic search
             cache_service: Cache service for conversation context
             vector_storage: Vector storage manager for search
+            conversation_manager: Injected conversation manager for session handling
         """
         self.llm_service = llm_service
         self.embedding_service = embedding_service
@@ -73,7 +75,7 @@ class QueryEngine:
         # Initialize components
         self.query_analyzer = QueryAnalyzer(llm_service)
         self.semantic_searcher = SemanticSearcher(embedding_service, vector_storage)
-        self.conversation_manager = ConversationManager(cache_service)
+        self.conversation_manager = conversation_manager  # Injected, not created
         self.clarification_generator = ClarificationGenerator(llm_service)
         
         logger.info("QueryEngine initialized with all components")

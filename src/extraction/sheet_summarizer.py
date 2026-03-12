@@ -41,9 +41,23 @@ class SheetSummarizer:
         if llm_service:
             self.llm = llm_service
         elif config.enable_llm_summarization:
+            # Build config dict for LLM factory
+            llm_config = {
+                "model": config.summarization_model,
+            }
+            # Note: API key should come from environment, not config
+            # The factory will handle getting the API key from the provider's config
+            import os
+            if config.summarization_provider == "openai":
+                llm_config["api_key"] = os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+            elif config.summarization_provider == "anthropic":
+                llm_config["api_key"] = os.getenv("LLM_API_KEY") or os.getenv("ANTHROPIC_API_KEY")
+            elif config.summarization_provider == "gemini":
+                llm_config["api_key"] = os.getenv("LLM_API_KEY") or os.getenv("GEMINI_API_KEY")
+            
             self.llm = LLMServiceFactory.create(
                 provider=config.summarization_provider,
-                model=config.summarization_model
+                config=llm_config
             )
         else:
             self.llm = None

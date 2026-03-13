@@ -6,10 +6,13 @@ The Google Drive Excel RAG (Retrieval-Augmented Generation) System is a comprehe
 
 **Key Characteristics:**
 - **Modular Architecture**: Pluggable abstractions for vector stores, embeddings, and LLMs
+- **Smart Query Pipeline**: Intelligent file/sheet selection, query classification, and answer generation with citations
+- **Chunk Visibility**: Full debugging and traceability for indexed data
+- **Enterprise Features**: Access control, audit logging, batch processing, webhooks, and data lineage
 - **Multi-Language Support**: English and Thai with language detection and specialized tokenization
-- **Scalable Design**: From MVP (ChromaDB + OpenAI) to production (OpenSearch + Claude)
+- **Scalable Design**: From MVP (ChromaDB + Ollama) to production (OpenSearch + Claude)
 - **Full-Stack**: Python backend (FastAPI), React frontend, Docker deployment
-- **Enterprise-Ready**: Comprehensive error handling, logging, metrics, and monitoring
+- **Open-Source Option**: Run fully locally with Ollama, BGE-M3, and ChromaDB (zero API costs)
 
 ---
 
@@ -18,785 +21,913 @@ The Google Drive Excel RAG (Retrieval-Augmented Generation) System is a comprehe
 ### High-Level Data Flow
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                        User Interface                            │
-│                    (React + Material-UI)                         │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-┌────────────────────────▼────────────────────────────────────────┐
-│                    FastAPI Backend                               │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │ API Layer (REST Endpoints)                               │   │
-│  │ - Authentication (/auth)                                 │   │
-│  │ - File Management (/files)                               │   │
-│  │ - Indexing (/index)                                      │   │
-│  │ - Query Processing (/query)                              │   │
-│  │ - Chat Sessions (/chat)                                  │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                         │                                        │
-│  ┌──────────────────────▼──────────────────────────────────┐   │
-│  │ Core Processing Layers                                   │   │
-│  │ ┌────────────────────────────────────────────────────┐  │   │
-│  │ │ Authentication Layer                               │  │   │
-│  │ │ - OAuth 2.0 Flow                                   │  │   │
-│  │ │ - Token Management & Refresh                       │  │   │
-│  │ │ - Encrypted Token Storage                          │  │   │
-│  │ └────────────────────────────────────────────────────┘  │   │
-│  │ ┌────────────────────────────────────────────────────┐  │   │
-│  │ │ Google Drive Integration                            │  │   │
-│  │ │ - File Discovery & Listing                          │  │   │
-│  │ │ - File Download & Streaming                         │  │   │
-│  │ │ - Change Detection (MD5 checksums)                  │  │   │
-│  │ │ - Rate Limiting & Retry Logic                       │  │   │
-│  │ └────────────────────────────────────────────────────┘  │   │
-│  │ ┌────────────────────────────────────────────────────┐  │   │
-│  │ │ Indexing Pipeline                                   │  │   │
-│  │ │ - File Discovery                                    │  │   │
-│  │ │ - Content Extraction (Excel parsing)                │  │   │
-│  │ │ - Embedding Generation (batched)                    │  │   │
-│  │ │ - Vector Storage                                    │  │   │
-│  │ │ - Metadata Storage                                  │  │   │
-│  │ │ - Progress Tracking & Cost Calculation              │  │   │
-│  │ └────────────────────────────────────────────────────┘  │   │
-│  │ ┌────────────────────────────────────────────────────┐  │   │
-│  │ │ Query Processing Engine                             │  │   │
-│  │ │ - Query Analysis (intent, entities, temporal refs)  │  │   │
-│  │ │ - Semantic Search (multi-collection)                │  │   │
-│  │ │ - File Selection & Ranking                          │  │   │
-│  │ │ - Sheet Selection & Alignment                       │  │   │
-│  │ │ - Clarification Generation                          │  │   │
-│  │ │ - Comparison Engine (cross-file)                    │  │   │
-│  │ │ - Answer Generation & Formatting                    │  │   │
-│  │ │ - Confidence Scoring                                │  │   │
-│  │ │ - Citation Generation                               │  │   │
-│  │ └────────────────────────────────────────────────────┘  │   │
-│  │ ┌────────────────────────────────────────────────────┐  │   │
-│  │ │ Text Processing (Multi-Language)                    │  │   │
-│  │ │ - Language Detection                                │  │   │
-│  │ │ - Tokenization (English & Thai)                     │  │   │
-│  │ │ - Normalization & Preprocessing                     │  │   │
-│  │ │ - Lemmatization                                     │  │   │
-│  │ └────────────────────────────────────────────────────┘  │   │
-│  └──────────────────────────────────────────────────────────┘   │
-│                         │                                        │
-│  ┌──────────────────────▼──────────────────────────────────┐   │
-│  │ Abstraction Layers (Pluggable)                           │   │
-│  │ ┌────────────────────────────────────────────────────┐  │   │
-│  │ │ Vector Store Abstraction                           │  │   │
-│  │ │ - ChromaDB (MVP)                                   │  │   │
-│  │ │ - OpenSearch (Production)                          │  │   │
-│  │ └────────────────────────────────────────────────────┘  │   │
-│  │ ┌────────────────────────────────────────────────────┐  │   │
-│  │ │ Embedding Service Abstraction                      │  │   │
-│  │ │ - OpenAI (text-embedding-3-small/large)            │  │   │
-│  │ │ - Sentence Transformers (local)                    │  │   │
-│  │ │ - Cohere                                           │  │   │
-│  │ └────────────────────────────────────────────────────┘  │   │
-│  │ ┌────────────────────────────────────────────────────┐  │   │
-│  │ │ LLM Service Abstraction                            │  │   │
-│  │ │ - OpenAI (GPT-4, GPT-3.5-turbo)                    │  │   │
-│  │ │ - Anthropic (Claude 3.5 Sonnet, Claude 3 Opus)     │  │   │
-│  │ │ - Google Gemini                                    │  │   │
-│  │ └────────────────────────────────────────────────────┘  │   │
-│  │ ┌────────────────────────────────────────────────────┐  │   │
-│  │ │ Cache Service Abstraction                          │  │   │
-│  │ │ - In-Memory Cache (development)                    │  │   │
-│  │ │ - Redis (production)                               │  │   │
-│  │ └────────────────────────────────────────────────────┘  │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-                         │
-        ┌────────────────┼────────────────┐
-        │                │                │
-┌───────▼────────┐ ┌────▼──────────┐ ┌──▼──────────────┐
-│  Vector Store  │ │ Metadata DB   │ │ Cache Service  │
-│ (ChromaDB or   │ │  (SQLite)     │ │ (Memory/Redis) │
-│  OpenSearch)   │ │               │ │                │
-└────────────────┘ └───────────────┘ └────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           User Interface                                     │
+│                       (React + Material-UI)                                  │
+└────────────────────────────────┬────────────────────────────────────────────┘
+                                 │
+┌────────────────────────────────▼────────────────────────────────────────────┐
+│                         FastAPI Backend                                      │
+│  ┌────────────────────────────────────────────────────────────────────────┐ │
+│  │ API Layer (REST Endpoints)                                             │ │
+│  │ - Authentication (/auth)          - Chunk Visibility (/chunks)         │ │
+│  │ - File Management (/files)        - Smart Query Pipeline (/query)      │ │
+│  │ - Indexing (/index)               - Batch Processing (/query/batch)    │ │
+│  │ - Chat Sessions (/chat)           - Templates (/query/templates)       │ │
+│  │ - Export (/export)                - Webhooks (/webhooks)               │ │
+│  │ - Intelligence (/intelligence)    - Traceability (/trace, /lineage)    │ │
+│  └────────────────────────────────────────────────────────────────────────┘ │
+│                                 │                                        │ │
+│  ┌──────────────────────────────▼────────────────────────────────────────┐ │
+│  │ Core Processing Layers                                                │ │
+│  │ ┌──────────────────────────────────────────────────────────────────┐ │ │
+│  │ │ Smart Query Pipeline (NEW)                                       │ │ │
+│  │ │ - QueryPipelineOrchestrator: Coordinates full query flow         │ │ │
+│  │ │ - FileSelector: Ranks files by relevance (semantic + metadata)   │ │ │
+│  │ │ - SheetSelector: Identifies relevant sheets within files         │ │ │
+│  │ │ - QueryClassifier: Classifies query type (aggregation/lookup/etc)│ │ │
+│  │ │ - Query Processors: Aggregation, Lookup, Summarization, Compare  │ │ │
+│  │ │ - AnswerGenerator: Generates answers with citations              │ │ │
+│  │ │ - TraceRecorder: Records complete audit trail                    │ │ │
+│  │ │ - DataLineageTracker: Tracks data from source to answer          │ │ │
+│  │ └──────────────────────────────────────────────────────────────────┘ │ │
+│  │ ┌──────────────────────────────────────────────────────────────────┐ │ │
+│  │ │ Chunk Visibility (NEW)                                           │ │ │
+│  │ │ - ChunkViewer: View/search/filter indexed chunks                 │ │ │
+│  │ │ - ChunkVersionStore: Track chunk changes across re-indexing      │ │ │
+│  │ │ - FeedbackCollector: Collect user feedback on chunk quality      │ │ │
+│  │ │ - ExtractionQualityScorer: Score extraction quality              │ │ │
+│  │ └──────────────────────────────────────────────────────────────────┘ │ │
+│  │ ┌──────────────────────────────────────────────────────────────────┐ │ │
+│  │ │ Intelligence Features (NEW)                                      │ │ │
+│  │ │ - DateParser: Parse natural language dates (Q1, YTD, last month) │ │ │
+│  │ │ - UnitAwarenessService: Handle units ($, %, kg) in aggregations  │ │ │
+│  │ │ - AnomalyDetector: Detect outliers and data quality issues       │ │ │
+│  │ │ - RelationshipDetector: Find relationships between files         │ │ │
+│  │ └──────────────────────────────────────────────────────────────────┘ │ │
+│  │ ┌──────────────────────────────────────────────────────────────────┐ │ │
+│  │ │ Enterprise Features (NEW)                                        │ │ │
+│  │ │ - AccessController: Role-based access control (RBAC)             │ │ │
+│  │ │ - BatchQueryProcessor: Process up to 100 queries in parallel     │ │ │
+│  │ │ - TemplateManager: Parameterized query templates                 │ │ │
+│  │ │ - WebhookManager: Event notifications with retry                 │ │ │
+│  │ │ - ExportService: Export to CSV, Excel, JSON                      │ │ │
+│  │ │ - QueryCache: Cache query results with TTL                       │ │ │
+│  │ └──────────────────────────────────────────────────────────────────┘ │ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────────────────────────────────────────────────────────────┐ │
+│  │ Enhanced Extraction Layer (NEW)                                      │ │
+│  │ - EnhancedOpenpyxlExtractor: Formula, pivot, chart, merged cells     │ │
+│  │ - StreamingExtractor: Handle files >100MB with chunked processing    │ │
+│  │ - IncrementalIndexer: Detect changes and update only modified chunks │ │
+│  │ - LanguageDetection: Detect content language for multilingual support│ │
+│  └──────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                 │
+        ┌────────────────────────┼────────────────────────┐
+        │                        │                        │
+┌───────▼────────┐    ┌─────────▼─────────┐    ┌────────▼────────┐
+│  Vector Store  │    │   Metadata DB     │    │  Cache Service  │
+│ (ChromaDB or   │    │    (SQLite)       │    │ (Memory/Redis)  │
+│  OpenSearch)   │    │                   │    │                 │
+└────────────────┘    └───────────────────┘    └─────────────────┘
 ```
 
 ---
 
 ## Core Components
 
-### 1. Entry Points
+### 1. Smart Query Pipeline (NEW)
 
-#### `src/main.py` - FastAPI Application
-**Purpose**: Main web application entry point with REST API and frontend serving
+The Smart Query Pipeline is the central intelligence layer that processes natural language queries through a sophisticated multi-stage pipeline.
 
-**Key Features:**
-- FastAPI application with lifespan management
-- CORS middleware configuration
-- Custom exception handlers (APIException, ValidationError, generic exceptions)
-- Health check endpoint with component status
-- API router registration (v1 endpoints)
-- Static file serving for React frontend
-- Structured logging and metrics collection
+#### Query Pipeline Orchestrator
 
-**Endpoints:**
-- `GET /` - Root endpoint with API information
-- `GET /health` - Health check with component status
-- `GET /docs` - Swagger UI documentation
-- `GET /redoc` - ReDoc documentation
-
-#### `src/cli.py` - Command-Line Interface
-**Purpose**: CLI for authentication, indexing, and querying operations
-
-**Commands:**
-- `auth login` - Initiate OAuth flow
-- `auth logout` - Revoke access
-- `auth status` - Check authentication status
-- `index full` - Full indexing of all files
-- `index incremental` - Incremental indexing
-- `index status` - Show indexing status
-- `index report` - Detailed indexing report
-- `query ask` - Submit natural language query
-- `query history` - Show query history
-- `query clear` - Clear query history
-- `config show` - Display configuration
-- `config validate` - Validate configuration
-
-### 2. API Layer (`src/api/`)
-
-#### Request/Response Models (`models.py`)
-Pydantic models for all API endpoints:
-- **Authentication**: LoginResponse, CallbackRequest, StatusResponse, LogoutResponse
-- **Indexing**: IndexRequest, IndexResponse, StatusResponse, ReportResponse, ControlResponse
-- **Query**: QueryRequest, QueryResponse, ClarificationRequest, HistoryResponse
-- **Common**: ErrorResponse with correlation ID and timestamp
-
-#### Middleware (`middleware.py`)
-- **CorrelationIdMiddleware**: Adds unique correlation ID to all requests
-- **RequestLoggingMiddleware**: Logs all requests and responses with timing
-- **RateLimitMiddleware**: Per-endpoint rate limiting with configurable limits
-
-#### Dependency Injection (`dependencies.py`)
-Factory functions for service instantiation:
-- `get_app_config()` - Application configuration
-- `get_auth_service()` - Authentication service
-- `get_vector_store()` - Vector store instance
-- `get_embedding_service()` - Embedding service
-- `get_llm_service()` - LLM service
-- `get_cache_service()` - Cache service
-- `get_metadata_storage()` - Metadata storage manager
-- `get_conversation_manager()` - Conversation manager
-- `get_indexing_orchestrator()` - Indexing orchestrator
-- `get_query_engine()` - Query engine
-- `require_authentication()` - Authentication guard
-
-#### API Routers
-- **`auth.py`** - Google Drive OAuth endpoints
-- **`web_auth.py`** - Web application authentication (JWT)
-- **`files.py`** - File management endpoints
-- **`gdrive_config.py`** - Google Drive configuration
-- **`chat.py`** - Chat session management
-- **`indexing.py`** - Indexing operations
-- **`query.py`** - Query processing
-- **`metrics.py`** - Metrics and statistics
-
-### 3. Authentication Layer (`src/auth/`)
-
-#### Components
-- **`oauth_flow.py`** - OAuth 2.0 authorization flow
-- **`token_storage.py`** - Encrypted token storage (Fernet encryption)
-- **`token_refresh.py`** - Automatic token refresh with expiration checking
-- **`authentication_service.py`** - Main authentication orchestrator
-
-#### Key Features
-- OAuth 2.0 with CSRF protection (state parameter)
-- Encrypted token storage with PBKDF2 key derivation
-- Automatic token refresh with 5-minute buffer
-- Secure file permissions (0600) for token storage
-- Comprehensive error handling and logging
-
-### 4. Google Drive Integration (`src/gdrive/`)
-
-#### Components
-- **`connector.py`** - Google Drive API client wrapper
-
-#### Key Features
-- Recursive file listing with pagination
-- Excel file filtering (MIME types and extensions)
-- File download with streaming support
-- Change detection using MD5 checksums
-- Exponential backoff retry logic (1s → 32s)
-- Rate limit handling (429, 403 errors)
-- Comprehensive error logging
-
-#### Supported File Types
-- `.xlsx` - Modern Excel format (openpyxl)
-- `.xls` - Legacy Excel format (xlrd)
-- `.xlsm` - Excel with macros (openpyxl)
-
-### 5. Content Extraction (`src/extraction/`)
-
-#### Components
-- **`content_extractor.py`** - Core Excel parsing engine (openpyxl/xlrd)
-- **`configurable_extractor.py`** - Strategy-based extraction with LLM support
-- **`sheet_summarizer.py`** - LLM-based sheet summarization
-- **`extraction_strategy.py`** - Extraction strategy definitions
-- **`docling_extractor.py`** - IBM Docling extraction (open-source)
-- **`unstructured_extractor.py`** - Unstructured.io extraction (open-source, local)
-- **`gemini_extractor.py`** - Google Gemini multimodal extraction
-- **`llama_extractor.py`** - LlamaParse document extraction
-
-#### Extraction Strategies
-| Strategy | Best For | Notes |
-|----------|----------|-------|
-| openpyxl | Pivot tables, charts | **Recommended default** - preserves structure |
-| Unstructured | Complex layouts | Open-source, runs locally, no API key |
-| Docling | PDF-heavy workflows | IBM open-source |
-| Gemini | Multimodal understanding | Requires API key |
-| LlamaParse | Document understanding | Requires API key |
-
-> **Important**: openpyxl is recommended for Excel files with pivot tables and charts. Unstructured and Docling flatten pivot tables and ignore charts.
-
-#### Extraction Capabilities
-- **Cell Data**: Values, formulas, formatting, data types
-- **Sheet Structure**: Headers, row/column counts, data types
-- **Formulas**: Both text and calculated values
-- **Pivot Tables**: Structure, fields, aggregation types
-- **Charts**: Type, title, axis labels, source ranges
-- **Merged Cells**: Proper handling of merged cell ranges
-- **Formatting**: Currency, percentage, dates, custom formats
-
-#### Data Models
-- `WorkbookData` - Complete workbook with all sheets
-- `SheetData` - Single sheet with headers, rows, metadata
-- `CellData` - Individual cell with value, type, formula
-- `PivotTableData` - Pivot table definition
-- `ChartData` - Chart metadata
-
-#### Error Handling
-- Corrupted file detection
-- Unsupported format handling
-- Memory limit enforcement (100 MB)
-- Row limit per sheet (configurable, default 10,000)
-- Graceful degradation for partial failures
-
-### 6. Indexing Pipeline (`src/indexing/`)
-
-#### Components
-- **`indexing_pipeline.py`** - Main orchestrator for full/incremental indexing
-- **`indexing_orchestrator.py`** - Manages indexing workflow with state tracking
-- **`embedding_generator.py`** - Generates embeddings with batching and caching
-- **`vector_storage.py`** - Manages vector store operations
-- **`metadata_storage.py`** - SQLite metadata management
-- **`vector_store_initializer.py`** - Vector store initialization
-
-#### Indexing Workflow
-1. **Discovery**: List all Excel files from Google Drive
-2. **Change Detection**: Compare MD5 checksums to identify changed files
-3. **Download**: Stream file content from Google Drive
-4. **Extraction**: Parse Excel files and extract structured data
-5. **Embedding Generation**: Generate embeddings for content (batched)
-6. **Vector Storage**: Store embeddings in vector database
-7. **Metadata Storage**: Store metadata in SQLite
-8. **Progress Tracking**: Update progress and generate reports
-
-#### Collections
-- **excel_sheets**: Sheet overviews and column summaries
-- **excel_pivots**: Pivot table descriptions
-- **excel_charts**: Chart descriptions
-
-#### Features
-- Parallel processing (configurable workers, default 5)
-- Batch embedding generation (default 100)
-- Caching to avoid regenerating embeddings
-- Cost tracking for API-based embeddings
-- Progress tracking with real-time updates
-- Pause/resume/stop capabilities
-- Comprehensive error handling and reporting
-
-### 7. Query Processing (`src/query/`)
-
-#### Components
-- **`query_engine.py`** - Main query orchestrator
-- **`query_analyzer.py`** - Analyzes query intent, entities, temporal references
-- **`semantic_searcher.py`** - Performs semantic search across collections
-- **`hybrid_searcher.py`** - BM25 + semantic search with RRF fusion
-- **`reranker.py`** - Cross-encoder reranking for improved relevance
-- **`query_expander.py`** - HyDE (Hypothetical Document Embeddings) expansion
-- **`context_compressor.py`** - Contextual compression for long contexts
-- **`file_selector.py`** - Ranks and selects relevant files
-- **`sheet_selector.py`** - Selects relevant sheets within files
-- **`date_parser.py`** - Extracts and parses dates from filenames
-- **`preference_manager.py`** - Manages user file selection preferences
-- **`clarification_generator.py`** - Generates clarifying questions
-- **`conversation_manager.py`** - Manages conversation state and context
-- **`comparison_engine.py`** - Aligns and compares data across files
-- **`answer_generator.py`** - Generates natural language answers
-- **`confidence_scorer.py`** - Scores answer confidence
-- **`citation_generator.py`** - Generates source citations
-- **`data_formatter.py`** - Formats data for presentation
-- **`no_results_handler.py`** - Handles queries with no results
-
-#### Advanced RAG Features
-| Feature | Component | Description |
-|---------|-----------|-------------|
-| Hybrid Search | `hybrid_searcher.py` | BM25 + semantic search with Reciprocal Rank Fusion |
-| Cross-Encoder Reranking | `reranker.py` | Reranks results using cross-encoder models |
-| HyDE Query Expansion | `query_expander.py` | Generates hypothetical documents for better retrieval |
-| Contextual Compression | `context_compressor.py` | Compresses long contexts while preserving relevance |
-| Streaming Responses | `query.py` | SSE streaming for long answer generation |
-
-#### Query Processing Pipeline
-1. **Analysis**: Extract intent, entities, temporal references
-2. **Search**: Perform semantic search across indexed content
-3. **File Selection**: Rank and select relevant files
-4. **Sheet Selection**: Identify relevant sheets
-5. **Clarification**: Generate clarifying questions if needed
-6. **Comparison**: Align and compare data if needed
-7. **Answer Generation**: Generate natural language answer
-8. **Confidence Scoring**: Calculate confidence score
-9. **Citation Generation**: Generate source citations
-10. **Formatting**: Format answer for presentation
-
-#### Features
-- Multi-intent query support (retrieve, compare, explain, etc.)
-- Temporal reference parsing (dates, months, quarters, years)
-- Comparison detection and handling
-- File and sheet ranking with multiple scoring factors
-- User preference learning with exponential decay
-- Automatic vs. manual selection based on confidence
-- Conversation context management
-- Session-based query history
-- Multi-language support
-
-### 8. Abstractions Layer (`src/abstractions/`)
-
-#### Vector Store Abstraction
-**Implementations:**
-- **ChromaDB** (MVP): Local vector database with persistent storage
-- **OpenSearch** (Production): Scalable cloud vector database with k-NN search
-
-**Interface:**
 ```python
-class VectorStore(ABC):
-    def create_collection(name, dimension, metadata_schema) -> bool
-    def add_embeddings(collection, ids, embeddings, documents, metadata) -> bool
-    def search(collection, query_embedding, top_k, filters) -> List[Dict]
-    def delete_by_id(collection, ids) -> bool
-    def update_embeddings(collection, ids, embeddings, documents, metadata) -> bool
+class QueryPipelineOrchestrator:
+    """
+    Orchestrates the smart query pipeline.
+    
+    Coordinates file selection, sheet selection, query classification,
+    processing, and answer generation with full traceability.
+    """
+    
+    def __init__(
+        self,
+        file_selector: FileSelector,
+        sheet_selector: SheetSelector,
+        query_classifier: QueryClassifier,
+        processor_registry: QueryProcessorRegistry,
+        answer_generator: AnswerGenerator,
+        trace_recorder: TraceRecorder,
+        cache_service: CacheService,
+        config: QueryPipelineConfig
+    ) -> None:
+        # All dependencies injected - follows DIP
+        ...
+    
+    def process_query(
+        self,
+        query: str,
+        session_id: Optional[str] = None,
+        file_hints: Optional[list[str]] = None,
+        sheet_hints: Optional[list[str]] = None
+    ) -> QueryResponse:
+        """Process query through full pipeline with traceability."""
+        ...
 ```
 
-#### Embedding Service Abstraction
-**Implementations:**
-- **OpenAI**: text-embedding-3-small (1536 dims), text-embedding-3-large (3072 dims)
-- **Sentence Transformers**: Local models (all-MiniLM-L6-v2, all-mpnet-base-v2)
-- **Cohere**: embed-english-v3.0 (1024 dims)
-- **BGE-M3**: Multilingual embeddings (1024 dims, local, free)
+#### Query Classification
 
-**Interface:**
+The system classifies queries into four types:
+
+| Query Type | Keywords | Example |
+|------------|----------|---------|
+| Aggregation | sum, total, average, count, min, max | "What is the total revenue?" |
+| Lookup | what is, find, show me, value of | "Show me the Q1 expenses" |
+| Summarization | summarize, describe, overview | "Summarize the sales data" |
+| Comparison | compare, difference, versus, trend | "Compare Q1 vs Q2 sales" |
+
+#### Query Processors (Registry Pattern)
+
 ```python
-class EmbeddingService(ABC):
-    def get_embedding_dimension() -> int
-    def embed_text(text) -> List[float]
-    def embed_batch(texts) -> List[List[float]]
-    def get_model_name() -> str
+class QueryProcessorRegistry:
+    """
+    Registry for query processors following Open/Closed Principle.
+    New processors can be registered without modifying existing code.
+    """
+    
+    _processors: dict[QueryType, type[BaseQueryProcessor]] = {}
+    
+    @classmethod
+    def register(cls, query_type: QueryType):
+        """Decorator to register a processor for a query type."""
+        def decorator(processor_class):
+            cls._processors[query_type] = processor_class
+            return processor_class
+        return decorator
+
+@QueryProcessorRegistry.register(QueryType.AGGREGATION)
+class AggregationProcessor(BaseQueryProcessor):
+    """Processes SUM, AVERAGE, COUNT, MIN, MAX, MEDIAN queries."""
+    ...
+
+@QueryProcessorRegistry.register(QueryType.LOOKUP)
+class LookupProcessor(BaseQueryProcessor):
+    """Processes specific value lookups with formatting preservation."""
+    ...
+
+@QueryProcessorRegistry.register(QueryType.SUMMARIZATION)
+class SummarizationProcessor(BaseQueryProcessor):
+    """Generates natural language summaries with statistics."""
+    ...
+
+@QueryProcessorRegistry.register(QueryType.COMPARISON)
+class ComparisonProcessor(BaseQueryProcessor):
+    """Compares data across files, sheets, or time periods."""
+    ...
 ```
 
-#### LLM Service Abstraction
-**Implementations:**
-- **OpenAI**: GPT-4o, GPT-4o-mini, GPT-4-turbo
-- **Anthropic**: Claude 3.5 Sonnet, Claude 3 Opus
-- **Google Gemini**: Gemini Pro, Gemini 1.5 Flash
-- **Ollama**: Llama 3.1, Mistral, Qwen (local, free)
-- **vLLM**: Any HuggingFace model via vLLM server
+#### File and Sheet Selection
 
-**Interface:**
+**File Selection** uses weighted scoring:
+- Semantic similarity: 50%
+- Metadata matching: 30%
+- User preference history: 20%
+
+**Confidence Thresholds:**
+- >0.9: Auto-select without confirmation
+- 0.5-0.9: Present top 3 candidates for user selection
+- <0.5: Request clarification
+
+**Sheet Selection** uses weighted scoring:
+- Sheet name similarity: 30%
+- Header/column matching: 40%
+- Data type alignment: 20%
+- Content similarity: 10%
+
+### 2. Chunk Visibility System (NEW)
+
+Provides complete visibility into indexed data for debugging and quality assurance.
+
 ```python
-class LLMService(ABC):
-    def generate(prompt, system_prompt, temperature, max_tokens) -> str
-    def generate_structured(prompt, response_schema, system_prompt) -> Dict
-    def get_model_name() -> str
+class ChunkViewer:
+    """
+    Provides chunk visibility and debugging capabilities.
+    Supports viewing, searching, filtering, and comparing chunks.
+    """
+    
+    def get_chunks_for_file(
+        self,
+        file_id: str,
+        page: int = 1,
+        page_size: int = 20
+    ) -> PaginatedChunkResponse:
+        """Get all chunks for a file with pagination."""
+        ...
+    
+    def search_chunks(
+        self,
+        query: str,
+        filters: Optional[ChunkFilters] = None
+    ) -> PaginatedChunkResponse:
+        """Search chunks with semantic similarity and filters."""
+        ...
+    
+    def compare_extraction_strategies(
+        self,
+        file_id: str,
+        strategies: list[str]
+    ) -> StrategyComparisonResult:
+        """Compare same file processed with different strategies."""
+        ...
 ```
 
-#### Cache Service Abstraction
-**Implementations:**
-- **In-Memory**: Development and testing
-- **Redis**: Production with TTL support
+#### Chunk Details Include:
+- Chunk text and raw source data
+- Row range and chunk boundaries
+- Extraction strategy used
+- Embedding metadata (dimensions, token count, model)
+- Quality scores
+- Version history
 
-**Interface:**
+### 3. Traceability Layer (NEW)
+
+Enterprise-grade audit trail for compliance and debugging.
+
+#### Query Trace
+
 ```python
-class CacheService(ABC):
-    def get(key) -> Optional[Any]
-    def set(key, value, ttl) -> bool
-    def delete(key) -> bool
-    def clear() -> bool
+@dataclass
+class QueryTrace:
+    """Complete audit record of query processing."""
+    trace_id: str
+    query_text: str
+    timestamp: str
+    user_id: Optional[str]
+    session_id: Optional[str]
+    
+    # File selection
+    file_candidates: list[FileCandidate]
+    file_selection_reasoning: str
+    selected_file_id: str
+    file_confidence: float
+    
+    # Sheet selection
+    sheet_candidates: list[SheetCandidate]
+    selected_sheets: list[str]
+    sheet_confidence: float
+    
+    # Query classification
+    query_type: QueryType
+    classification_confidence: float
+    
+    # Answer generation
+    answer_text: str
+    citations: list[Citation]
+    answer_confidence: float
+    
+    # Performance
+    total_processing_time_ms: int
 ```
 
-### 9. Database Layer (`src/database/`)
+#### Data Lineage
 
-#### Components
-- **`connection.py`** - SQLite connection management
-- **`schema.py`** - Database schema definitions
-- **`migrations.py`** - Database migration utilities
+```python
+@dataclass
+class DataLineage:
+    """Complete data path from source to answer."""
+    lineage_id: str
+    answer_component: str
+    
+    # Source information
+    file_id: str
+    file_name: str
+    sheet_name: str
+    cell_range: str
+    source_value: str
+    
+    # Processing path
+    chunk_id: str
+    embedding_id: str
+    retrieval_score: float
+    
+    # Timestamps
+    indexed_at: str
+    last_verified_at: Optional[str]
+    is_stale: bool
+```
 
-#### Tables
-- **files**: File metadata with MD5 checksums and status
-- **sheets**: Sheet structure and statistics
-- **pivot_tables**: Pivot table definitions
-- **charts**: Chart metadata
-- **user_preferences**: User file selection preferences
-- **query_history**: Query history with session tracking
+### 4. Enhanced Extraction Layer (NEW)
 
-#### Indexes
-- Optimized indexes on frequently queried columns
-- Foreign key relationships with cascade delete
-- Automatic timestamp triggers for updated_at
+Extended extraction with Excel-specific feature detection.
 
-### 10. Text Processing (`src/text_processing/`)
+#### Supported Excel Features
 
-#### Components
-- **`language_detector.py`** - Language detection with confidence scoring
-- **`tokenizer.py`** - Language-specific tokenization
-- **`normalizer.py`** - Text normalization and preprocessing
-- **`preprocessor.py`** - Complete preprocessing pipeline
+| Feature | Detection | Extraction |
+|---------|-----------|------------|
+| Formulas | ✅ | Both formula text and computed value |
+| Pivot Tables | ✅ | Structure, fields, aggregation types |
+| Charts | ✅ | Type, title, axis labels, data series |
+| Merged Cells | ✅ | Range and expanded values |
+| Named Ranges | ✅ | Name, range, scope |
+| Excel Tables | ✅ | Name, headers, row count |
+| Hidden Content | ✅ | Hidden sheets, rows, columns |
+| Conditional Formatting | ✅ | Rules and affected ranges |
+| Data Validation | ✅ | Validation rules and allowed values |
 
-#### Language Support
-- **English**: NLTK-based tokenization and lemmatization
-- **Thai**: PyThaiNLP with multiple tokenizer engines (newmm, longest, deepcut)
-- **Multi-language**: Automatic language detection and routing
+#### Quality Scoring
 
-#### Features
-- Language detection with confidence thresholds
-- Language-specific tokenization
-- Lemmatization for semantic matching
-- Text normalization (whitespace, dashes, case)
-- Header normalization for column matching
-- Fuzzy matching for similar terms
+```python
+class ExtractionQualityScorer:
+    """
+    Computes quality score (0-1) based on:
+    - data_completeness
+    - structure_clarity
+    - has_headers
+    - has_data
+    - error_count
+    
+    Files with quality < 0.5 are flagged as problematic.
+    """
+```
 
-### 11. Configuration Management (`src/config.py`)
+### 5. Intelligence Features (NEW)
 
-#### Configuration Sections
-- **Environment**: dev, staging, production
-- **Vector Store**: Provider and configuration
-- **Embedding**: Provider and configuration
-- **LLM**: Provider and configuration
-- **Google Drive**: OAuth credentials and scopes
-- **Database**: SQLite path
-- **Cache**: Provider and configuration
-- **Extraction**: Strategy and parameters
-- **Indexing**: Concurrency and batch settings
-- **Query**: Session timeout and result limits
-- **API**: Host, port, rate limits, CORS
-- **Language**: Supported languages and processing options
+#### Date Parser
+Parses natural language date references:
+- "last quarter", "YTD", "Q1 2024"
+- "past 6 months", "January 2024"
+- Supports fiscal year configurations
+- Handles multiple date formats (MM/DD/YYYY, DD/MM/YYYY, YYYY-MM-DD)
 
-#### Validation
-- Required API keys based on provider
-- Numeric ranges and thresholds
-- Encryption key length (min 32 chars)
-- Provider-specific requirements
-- Language configuration consistency
+#### Unit Awareness
+- Detects and preserves units ($, €, %, kg, miles)
+- Performs unit-aware aggregations
+- Warns on unit mismatch in comparisons
+- Includes units in numeric answers
 
-#### Environment Profiles
-- `.env.example` - Complete template with all options
-- `.env.development.example` - Local development setup
-- `.env.production.example` - Production deployment setup
-- `.env.docker.example` - Docker deployment setup
+#### Anomaly Detection
+- Detects numeric outliers using IQR and Z-score
+- Identifies missing values and duplicates
+- Flags inconsistent formatting
 
----
+#### Relationship Detection
+- Detects relationships between files based on common columns
+- Supports implicit joins across files
+- Suggests related files during selection
 
-## Frontend Architecture (`frontend/`)
+### 6. Enterprise Features (NEW)
 
-### Technology Stack
-- **React 19** with TypeScript
-- **Material-UI (MUI)** for components
-- **Vite** for build and dev server
-- **React Router** for client-side routing
-- **Axios** with interceptors and retry logic
+#### Access Control
 
-### Pages
-- **LoginPage**: Authentication with username/password
-- **ConfigPage**: Google Drive connection and file management
-- **ChatPage**: Natural language query interface
+```python
+class AccessController:
+    """
+    Role-based access control with file-level restrictions.
+    
+    Roles: admin, developer, analyst, viewer
+    """
+    
+    def check_access(
+        self,
+        user_id: str,
+        resource_type: str,
+        resource_id: str,
+        action: str
+    ) -> bool:
+        """Check if user has permission for action."""
+        ...
+    
+    def log_access_attempt(
+        self,
+        user_id: str,
+        resource_type: str,
+        resource_id: str,
+        action: str,
+        granted: bool
+    ) -> None:
+        """Log access attempt for audit."""
+        ...
+```
 
-### Components
-- **ChatInterface**: Query input and message display
-- **ConversationSidebar**: Conversation history
-- **FileUpload**: Drag-and-drop file upload
-- **GDriveConnection**: Google Drive connection status
-- **IndexedFilesList**: File management with pagination
-- **ProtectedRoute**: Authentication guard
-- **MessageItem**: Individual message display with citations
-- **MessageList**: Message list container
-- **LoadingSkeleton**: Loading state UI
-- **LoginForm**: Authentication form
-- **QueryInput**: Multi-line query input
+#### Batch Processing
+- Process up to 100 queries in parallel
+- Individual status tracking per query
+- Continue on partial failures
+- Progress tracking via batch_id
 
-### Hooks
-- **useAuth**: Authentication state management
-- **useLoading**: Loading state management
+#### Query Templates
+- Parameterized templates with `{{parameter_name}}` syntax
+- Template sharing within organization
+- Execute templates with parameter substitution
 
-### Services
-- **api.ts**: Axios client with interceptors
-- **authService.ts**: Authentication operations
-- **chatService.ts**: Chat and query operations
-- **fileService.ts**: File management operations
+#### Webhooks
+- Events: indexing_complete, query_failed, low_confidence_answer, batch_complete
+- Retry with exponential backoff (3 attempts)
+- Delivery history tracking
 
-### Features
-- Responsive design (mobile, tablet, desktop)
-- Real-time message display
-- Source citations with expandable details
-- Confidence score badges
-- Conversation history
-- Session management
-- Error handling with user-friendly messages
-- Loading states and progress indicators
+#### Export
+- Formats: CSV, Excel (.xlsx), JSON
+- Preserves data types and formatting
+- Scheduled exports for recurring reports
 
----
-
-## Deployment Architecture
-
-### Docker Deployment
-
-#### Services
-- **web**: FastAPI backend + React frontend (port 8000)
-- **chromadb**: Vector database (port 8001)
-
-#### Volumes
-- **app-data**: Application data and SQLite database
-- **uploads**: Uploaded Excel files
-- **logs**: Application logs
-- **tokens**: Encrypted OAuth tokens
-- **chroma-data**: Vector database embeddings
-
-#### Environment Configuration
-- Google Drive OAuth credentials
-- LLM and embedding API keys
-- Database and cache settings
-- Language processing options
-- File upload limits
-
-#### Health Checks
-- API health endpoint: `/health`
-- ChromaDB heartbeat: `/api/v1/heartbeat`
-- Container health checks with retries
-
-### Production Considerations
-- Use reverse proxy (nginx, traefik) for HTTPS
-- Configure CORS origins for security
-- Set resource limits (CPU, memory)
-- Enable monitoring and logging
-- Implement automated backups
-- Use external vector store (OpenSearch) for scaling
-- Use external cache (Redis) for session management
-- Deploy multiple application instances behind load balancer
+#### Query Caching
+- Configurable TTL (default 1 hour)
+- Intelligent cache key generation for semantically equivalent queries
+- Cache invalidation on re-indexing
 
 ---
 
-## Data Flow Examples
+## API Endpoints
 
-### Authentication Flow
-1. User clicks "Login" in web UI
-2. Frontend redirects to `/auth/login` endpoint
-3. Backend generates OAuth URL with state parameter
-4. User visits Google OAuth consent screen
-5. Google redirects to `/auth/callback` with authorization code
-6. Backend exchanges code for access/refresh tokens
-7. Tokens encrypted and stored in file system
-8. User authenticated and redirected to main app
+### Chunk Visibility API (NEW)
 
-### Indexing Flow
-1. User clicks "Index Files" in configuration page
-2. Frontend calls `POST /api/v1/index/full`
-3. Backend starts indexing pipeline:
-   - Lists all Excel files from Google Drive
-   - Compares MD5 checksums to detect changes
-   - Downloads changed files
-   - Extracts content (sheets, formulas, pivot tables, charts)
-   - Generates embeddings (batched)
-   - Stores embeddings in vector database
-   - Stores metadata in SQLite
-4. Frontend polls `/api/v1/index/status/{job_id}` for progress
-5. WebSocket connection for real-time updates
-6. Indexing complete, report displayed
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/chunks/{file_id}` | Get all chunks for a file |
+| GET | `/api/v1/chunks/{file_id}/sheets/{sheet_name}` | Get chunks for a sheet |
+| POST | `/api/v1/chunks/search` | Search chunks with filters |
+| GET | `/api/v1/files/{file_id}/extraction-metadata` | Get extraction details |
+| GET | `/api/v1/chunks/{file_id}/versions` | Get chunk version history |
+| POST | `/api/v1/chunks/{chunk_id}/feedback` | Submit chunk feedback |
+| GET | `/api/v1/chunks/feedback-summary` | Get aggregated feedback |
+| GET | `/api/v1/files/quality-report` | Get quality scores for all files |
 
-### Query Flow
-1. User enters natural language query in chat interface
-2. Frontend calls `POST /api/v1/query`
-3. Backend processes query:
-   - Analyzes query (intent, entities, temporal refs)
-   - Performs semantic search across collections
-   - Ranks and selects relevant files
-   - Selects relevant sheets
-   - Checks if clarification needed
-   - Retrieves data from selected sheets
-   - Generates answer using LLM
-   - Calculates confidence score
-   - Generates source citations
-4. Frontend displays answer with citations and confidence
-5. User can provide feedback or ask follow-up question
-6. Follow-up uses same session for context
+### Smart Query Pipeline API (NEW)
 
----
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/query/smart` | Process natural language query |
+| POST | `/api/v1/query/clarify` | Respond to clarification request |
+| GET | `/api/v1/query/classify` | Get query type classification |
+| GET | `/api/v1/query/trace/{trace_id}` | Get complete query trace |
+| GET | `/api/v1/lineage/{lineage_id}` | Get data lineage |
 
-## Key Design Decisions
+### Batch and Template API (NEW)
 
-### 1. Pluggable Abstractions
-**Decision**: Use factory pattern for vector stores, embeddings, and LLMs
-**Rationale**: Enable easy migration from MVP to production without code changes
-**Benefit**: Start with ChromaDB + OpenAI, migrate to OpenSearch + Claude
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/query/batch` | Submit batch queries (max 100) |
+| GET | `/api/v1/query/batch/{batch_id}/status` | Get batch status |
+| POST | `/api/v1/query/templates` | Create query template |
+| POST | `/api/v1/query/templates/{template_id}/execute` | Execute template |
+| GET | `/api/v1/query/templates` | List all templates |
 
-### 2. Open-Source Stack Option
-**Decision**: Support fully open-source deployment with zero API costs
-**Configuration**:
-- Vector Store: ChromaDB (local)
-- Embeddings: BGE-M3 (local, multilingual, 1024 dims)
-- LLM: Ollama with Llama 3.1 (local)
-- Extraction: openpyxl or Unstructured.io (local)
-**Benefit**: Complete privacy, no API costs, runs entirely on-premises
+### Export and Webhook API (NEW)
 
-### 3. Multi-Language Support
-**Decision**: Implement language detection and specialized tokenization
-**Rationale**: Support both English and Thai users
-**Benefit**: Better semantic matching and query understanding
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/export` | Export results (CSV/Excel/JSON) |
+| POST | `/api/v1/webhooks` | Register webhook |
+| GET | `/api/v1/webhooks/{webhook_id}/deliveries` | Get delivery history |
 
-### 4. Advanced RAG Pipeline
-**Decision**: Implement hybrid search, reranking, and HyDE
-**Rationale**: Improve retrieval quality beyond basic semantic search
-**Components**:
-- Hybrid Search: BM25 + semantic with RRF fusion
-- Cross-Encoder Reranking: ms-marco-MiniLM-L-6-v2
-- HyDE: Hypothetical Document Embeddings for query expansion
-**Benefit**: Significantly improved retrieval accuracy
+### Intelligence API (NEW)
 
-### 5. Encrypted Token Storage
-**Decision**: Use Fernet symmetric encryption for OAuth tokens
-**Rationale**: Secure local storage without external key management
-**Benefit**: Simple deployment while maintaining security
-
-### 6. Metadata-Rich Embeddings
-**Decision**: Store rich metadata with embeddings (file_id, sheet_name, etc.)
-**Rationale**: Enable filtering and ranking based on metadata
-**Benefit**: More relevant search results and better file selection
-
-### 7. Conversation Context Management
-**Decision**: Use cache service for session management
-**Rationale**: Enable follow-up questions with context
-**Benefit**: Natural multi-turn conversations
-
-### 8. Cost Tracking
-**Decision**: Track embedding generation costs per API call
-**Rationale**: Monitor and optimize API spending
-**Benefit**: Visibility into operational costs
-
-### 9. Comprehensive Error Handling
-**Decision**: Graceful degradation with fallback strategies
-**Rationale**: Ensure system continues functioning despite failures
-**Benefit**: Better user experience and system reliability
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/query/suggestions` | Get query suggestions |
+| GET | `/api/v1/files/{file_id}/anomalies` | Get detected anomalies |
+| GET | `/api/v1/usage/summary` | Get query cost statistics |
 
 ---
 
-## Performance Characteristics
+## Database Schema (Extended)
 
-### Indexing Performance
-- **File Discovery**: ~100-500ms per 100 files
-- **Content Extraction**: ~100-500ms per file (depends on size)
-- **Embedding Generation**: ~1-5s per 100 texts (batched)
-- **Vector Storage**: ~100-500ms per 100 embeddings
-- **Metadata Storage**: ~50-200ms per file
+### New Tables
 
-### Query Performance
-- **Query Analysis**: ~500-1000ms (LLM call)
-- **Semantic Search**: ~100-300ms (embedding + vector search)
-- **File Selection**: ~50-100ms (ranking algorithm)
-- **Sheet Selection**: ~100-200ms (parallel processing)
-- **Answer Generation**: ~1-3s (LLM call)
-- **Total Pipeline**: ~2-5 seconds
+```sql
+-- Chunk versions for tracking re-indexing changes
+CREATE TABLE chunk_versions (
+    id INTEGER PRIMARY KEY,
+    chunk_id TEXT NOT NULL,
+    file_id TEXT NOT NULL,
+    version_number INTEGER NOT NULL,
+    chunk_text TEXT NOT NULL,
+    extraction_strategy TEXT NOT NULL,
+    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    change_summary TEXT
+);
 
-### Scalability
-- **Files**: Tested with 1000+ files
-- **Sheets**: Tested with 10,000+ sheets
-- **Embeddings**: ChromaDB handles 1M+, OpenSearch handles billions
-- **Concurrent Users**: Depends on LLM API rate limits
+-- Query traces for audit
+CREATE TABLE query_traces (
+    trace_id TEXT PRIMARY KEY,
+    query_text TEXT NOT NULL,
+    user_id TEXT,
+    session_id TEXT,
+    file_selection_json TEXT,
+    sheet_selection_json TEXT,
+    query_type TEXT,
+    answer_text TEXT,
+    citations_json TEXT,
+    answer_confidence REAL,
+    total_processing_time_ms INTEGER,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Data lineage records
+CREATE TABLE data_lineage (
+    lineage_id TEXT PRIMARY KEY,
+    trace_id TEXT NOT NULL,
+    answer_component TEXT NOT NULL,
+    file_id TEXT NOT NULL,
+    sheet_name TEXT NOT NULL,
+    cell_range TEXT NOT NULL,
+    chunk_id TEXT NOT NULL,
+    is_stale BOOLEAN DEFAULT 0
+);
+
+-- Extraction metadata
+CREATE TABLE extraction_metadata (
+    file_id TEXT PRIMARY KEY,
+    strategy_used TEXT NOT NULL,
+    quality_score REAL NOT NULL,
+    has_headers BOOLEAN,
+    extraction_duration_ms INTEGER,
+    extracted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Access control
+CREATE TABLE file_access_control (
+    file_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (file_id, user_id)
+);
+
+-- Query templates
+CREATE TABLE query_templates (
+    template_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    template_text TEXT NOT NULL,
+    parameters TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    is_shared BOOLEAN DEFAULT 0
+);
+
+-- Webhooks
+CREATE TABLE webhooks (
+    webhook_id TEXT PRIMARY KEY,
+    url TEXT NOT NULL,
+    events TEXT NOT NULL,
+    is_active BOOLEAN DEFAULT 1
+);
+```
 
 ---
 
-## Security Considerations
+## Project Structure (Updated)
 
-### Authentication
-- OAuth 2.0 with CSRF protection
-- Encrypted token storage
-- Automatic token refresh
-- Token revocation on logout
+```
+excel-rag/
+├── src/
+│   ├── abstractions/           # Pluggable service abstractions
+│   │   ├── vector_store.py     # Vector store interface
+│   │   ├── chromadb_store.py   # ChromaDB implementation
+│   │   ├── opensearch_store.py # OpenSearch implementation
+│   │   ├── embedding_service.py
+│   │   ├── bge_embedding_service.py  # BGE-M3 (local, multilingual)
+│   │   ├── llm_service.py
+│   │   ├── ollama_llm_service.py     # Ollama (local)
+│   │   ├── cache_service.py
+│   │   └── redis_cache.py
+│   ├── access_control/         # NEW: Role-based access control
+│   │   ├── controller.py       # AccessController
+│   │   ├── store.py            # Access control storage
+│   │   └── audit_logger.py     # Audit logging
+│   ├── api/
+│   │   ├── routes/             # NEW: Modular API routes
+│   │   │   ├── chunks.py       # Chunk visibility endpoints
+│   │   │   ├── query.py        # Smart query pipeline endpoints
+│   │   │   ├── batch.py        # Batch and template endpoints
+│   │   │   ├── export.py       # Export and webhook endpoints
+│   │   │   └── intelligence.py # Intelligence endpoints
+│   │   ├── auth.py
+│   │   ├── files.py
+│   │   └── ...
+│   ├── batch/                  # NEW: Batch processing
+│   │   ├── processor.py        # BatchQueryProcessor
+│   │   └── store.py            # Batch job storage
+│   ├── cache/                  # NEW: Query caching
+│   │   ├── query_cache.py      # QueryCache with TTL
+│   │   └── invalidation_service.py
+│   ├── chunk_viewer/           # NEW: Chunk visibility
+│   │   ├── viewer.py           # ChunkViewer service
+│   │   ├── metadata_store.py   # ChunkMetadataStore
+│   │   ├── version_store.py    # ChunkVersionStore
+│   │   └── feedback.py         # FeedbackCollector
+│   ├── export/                 # NEW: Export capabilities
+│   │   ├── service.py          # ExportService
+│   │   └── store.py            # Export job storage
+│   ├── extraction/
+│   │   ├── enhanced_strategy.py    # NEW: Enhanced extraction base
+│   │   ├── enhanced_openpyxl.py    # NEW: Formula/pivot/chart extraction
+│   │   ├── streaming.py            # NEW: Large file streaming
+│   │   ├── incremental.py          # NEW: Incremental indexing
+│   │   ├── quality_scorer.py       # NEW: Quality scoring
+│   │   ├── language_detection.py   # NEW: Language detection
+│   │   └── ...
+│   ├── intelligence/           # NEW: Intelligence features
+│   │   ├── date_parser.py      # Natural language date parsing
+│   │   ├── unit_awareness.py   # Unit detection and handling
+│   │   ├── anomaly_detector.py # Outlier and quality detection
+│   │   └── relationship_detector.py  # Cross-file relationships
+│   ├── models/                 # NEW: Domain models
+│   │   ├── query_pipeline.py   # Query pipeline models
+│   │   ├── chunk_visibility.py # Chunk visibility models
+│   │   ├── traceability.py     # Trace and lineage models
+│   │   ├── excel_features.py   # Excel-specific models
+│   │   └── enterprise.py       # Enterprise feature models
+│   ├── query_pipeline/         # NEW: Smart query pipeline
+│   │   ├── orchestrator.py     # QueryPipelineOrchestrator
+│   │   ├── file_selector.py    # FileSelector
+│   │   ├── sheet_selector.py   # SheetSelector
+│   │   ├── classifier.py       # QueryClassifier
+│   │   ├── answer_generator.py # AnswerGenerator
+│   │   ├── processor_registry.py
+│   │   ├── processors/
+│   │   │   ├── base.py         # BaseQueryProcessor
+│   │   │   ├── aggregation.py  # AggregationProcessor
+│   │   │   ├── lookup.py       # LookupProcessor
+│   │   │   ├── summarization.py
+│   │   │   └── comparison.py   # ComparisonProcessor
+│   │   ├── config.py
+│   │   └── cost_estimator.py   # Query cost estimation
+│   ├── templates/              # NEW: Query templates
+│   │   ├── manager.py          # TemplateManager
+│   │   └── store.py            # Template storage
+│   ├── traceability/           # NEW: Audit and lineage
+│   │   ├── trace_recorder.py   # TraceRecorder
+│   │   ├── trace_storage.py    # Trace storage
+│   │   ├── lineage_tracker.py  # DataLineageTracker
+│   │   └── lineage_storage.py  # Lineage storage
+│   ├── webhooks/               # NEW: Webhook system
+│   │   ├── manager.py          # WebhookManager
+│   │   └── store.py            # Webhook storage
+│   ├── container.py            # NEW: Dependency injection container
+│   ├── exceptions.py           # Extended exception hierarchy
+│   └── ...
+├── frontend/
+├── tests/
+└── docs/
+```
+
+---
+
+## Configuration Options (Extended)
+
+### Smart Query Pipeline Configuration
+
+```bash
+# Query Pipeline
+QUERY_PIPELINE_TIMEOUT=30              # Timeout in seconds
+FILE_SELECTION_THRESHOLD_HIGH=0.9      # Auto-select threshold
+FILE_SELECTION_THRESHOLD_LOW=0.5       # Clarification threshold
+SHEET_SELECTION_THRESHOLD=0.7          # Sheet auto-select threshold
+
+# Query Classification
+CLASSIFICATION_CONFIDENCE_THRESHOLD=0.6  # Below this, show alternatives
+
+# Caching
+QUERY_CACHE_TTL=3600                   # Cache TTL in seconds (1 hour)
+QUERY_CACHE_ENABLED=true               # Enable/disable caching
+
+# Batch Processing
+BATCH_MAX_QUERIES=100                  # Maximum queries per batch
+BATCH_PARALLEL_WORKERS=5               # Parallel processing workers
+
+# Traceability
+TRACE_RETENTION_DAYS=90                # Trace retention period
+ENABLE_DATA_LINEAGE=true               # Enable lineage tracking
+```
+
+### Access Control Configuration
+
+```bash
+# Access Control
+ACCESS_CONTROL_ENABLED=true            # Enable RBAC
+DEFAULT_USER_ROLE=viewer               # Default role for new users
+AUDIT_LOG_ENABLED=true                 # Enable audit logging
+```
+
+### Extraction Configuration
+
+```bash
+# Enhanced Extraction
+EXTRACT_FORMULAS=true                  # Extract formula text and values
+EXTRACT_PIVOT_TABLES=true              # Extract pivot table data
+EXTRACT_CHARTS=true                    # Extract chart metadata
+DETECT_HIDDEN_CONTENT=true             # Detect hidden sheets/rows/cols
+QUALITY_THRESHOLD=0.5                  # Flag files below this score
+
+# Streaming (Large Files)
+STREAMING_THRESHOLD_MB=100             # Use streaming above this size
+STREAMING_CHUNK_SIZE=10000             # Rows per chunk
+MAX_MEMORY_MB=1024                     # Memory limit for extraction
+```
+
+### Intelligence Configuration
+
+```bash
+# Date Parsing
+FISCAL_YEAR_START_MONTH=1              # Fiscal year start (1=January)
+DEFAULT_DATE_FORMAT=MM/DD/YYYY         # Default date format
+
+# Anomaly Detection
+OUTLIER_IQR_MULTIPLIER=1.5             # IQR multiplier for outliers
+OUTLIER_ZSCORE_THRESHOLD=3.0           # Z-score threshold
+```
+
+---
+
+## Performance Characteristics (Updated)
+
+### Query Pipeline Performance
+
+| Operation | Target | Notes |
+|-----------|--------|-------|
+| File Selection | <500ms | For up to 1000 indexed files |
+| Sheet Selection | <200ms | For files with up to 50 sheets |
+| Query Classification | <100ms | Pattern matching + LLM fallback |
+| Aggregation Query | <2s | For datasets up to 100,000 rows |
+| Lookup Query | <1s | For datasets up to 100,000 rows |
+| Chunk Listing | <500ms | For files with up to 1000 chunks |
+
+### Caching Performance
+
+| Scenario | Improvement |
+|----------|-------------|
+| Cache Hit | 10-100x faster (skip LLM calls) |
+| Semantic Equivalence | Matches similar queries |
+| Invalidation | Automatic on re-indexing |
+
+---
+
+## Security Considerations (Extended)
+
+### Access Control
+- Role-based access control (RBAC) with four roles: admin, developer, analyst, viewer
+- File-level access restrictions
+- All access attempts logged for audit
+- 403 Forbidden for unauthorized access
 
 ### Data Protection
 - Encrypted token storage (Fernet)
-- HTTPS in production (via reverse proxy)
-- CORS configuration for frontend
-- Rate limiting on API endpoints
+- Data masking for sensitive columns
+- Query traces stored with configurable retention
+- Data lineage for compliance audits
 
 ### API Security
 - JWT token validation
-- Protected routes requiring authentication
+- Rate limiting on all endpoints
 - Correlation IDs for request tracing
-- Comprehensive error logging
-
-### Configuration Security
-- Environment variables for sensitive data
-- No hardcoded credentials
-- Separate profiles for dev/prod
-- Encryption key management
+- Input validation via Pydantic models
 
 ---
 
-## Monitoring and Observability
+## Monitoring and Observability (Extended)
 
-### Logging
-- Structured logging with correlation IDs
-- Log levels: DEBUG, INFO, WARNING, ERROR
-- Separate logs for API, indexing, queries
-- Request/response logging with timing
+### New Metrics
 
-### Metrics
-- Embedding generation costs
-- Query processing time
-- Indexing progress and statistics
-- API endpoint usage
-- Error rates and types
+| Metric | Description |
+|--------|-------------|
+| query_pipeline_duration_ms | Total pipeline processing time |
+| file_selection_confidence | File selection confidence scores |
+| query_classification_accuracy | Classification confidence distribution |
+| cache_hit_rate | Query cache hit percentage |
+| batch_query_throughput | Queries processed per second |
+| extraction_quality_scores | Distribution of quality scores |
+| access_denied_count | Access control denials |
 
 ### Health Checks
-- API health endpoint with component status
-- Database connectivity checks
-- Vector store connectivity checks
-- Cache service connectivity checks
 
-### Debugging
-- Correlation IDs for request tracing
-- Detailed error messages
-- Request/response logging
-- Performance timing information
+```json
+{
+  "status": "healthy",
+  "components": {
+    "database": "healthy",
+    "vector_store": "healthy",
+    "cache": "healthy",
+    "query_pipeline": "healthy",
+    "chunk_viewer": "healthy",
+    "access_control": "healthy"
+  }
+}
+```
 
 ---
 
-## Future Enhancements
+## Key Design Decisions (Extended)
 
-### Short Term
-1. Async indexing pipeline for LLM summarization
-2. Query caching for common patterns
-3. Advanced comparison engine for multi-file analysis
-4. Streaming responses for long-running queries
-5. Batch query processing
+### 1. Registry Pattern for Query Processors
+**Decision**: Use decorator-based registry for query processors
+**Rationale**: Follow Open/Closed Principle - add new processors without modifying existing code
+**Benefit**: Easy to extend with custom query types
 
-### Medium Term
-1. Support for additional file formats (CSV, JSON, Parquet)
-2. Real-time file change notifications
-3. Advanced analytics and reporting
-4. Custom extraction strategies
-5. Fine-tuned embedding models
+### 2. Dependency Injection Container
+**Decision**: Centralized DI container in `src/container.py`
+**Rationale**: Follow Dependency Inversion Principle - depend on abstractions
+**Benefit**: Testable, configurable, no module-level state
 
-### Long Term
-1. Distributed indexing across multiple workers
-2. Multi-tenant support
-3. Advanced access control and permissions
-4. Custom LLM fine-tuning
-5. Integration with other cloud storage providers
+### 3. Complete Traceability
+**Decision**: Record full audit trail for every query
+**Rationale**: Enterprise compliance requirements
+**Benefit**: Debug issues, audit decisions, meet regulatory requirements
+
+### 4. Data Lineage Tracking
+**Decision**: Track data path from source cell to answer
+**Rationale**: Compliance officers need to verify data accuracy
+**Benefit**: Full transparency, staleness detection
+
+### 5. Chunk Versioning
+**Decision**: Preserve chunk history across re-indexing
+**Rationale**: Understand what changed and debug retrieval differences
+**Benefit**: Diff comparison, rollback capability
+
+### 6. Intelligent Caching
+**Decision**: Cache query results with semantic equivalence matching
+**Rationale**: Reduce LLM costs and improve response times
+**Benefit**: 10-100x faster for repeated/similar queries
+
+---
+
+## Data Flow Examples (Extended)
+
+### Smart Query Flow
+
+```
+1. User submits: "What was the total revenue in Q1 2024?"
+   │
+2. QueryPipelineOrchestrator.process_query()
+   │
+3. TraceRecorder.start_trace() → trace_id generated
+   │
+4. FileSelector.rank_files()
+   ├── Semantic similarity: 50%
+   ├── Metadata matching: 30%
+   ├── User preferences: 20%
+   └── Result: sales_2024.xlsx (confidence: 0.95)
+   │
+5. SheetSelector.select_sheets()
+   ├── Name matching: 30%
+   ├── Header matching: 40%
+   └── Result: "Q1" sheet (confidence: 0.92)
+   │
+6. QueryClassifier.classify()
+   └── Result: AGGREGATION (confidence: 0.98)
+   │
+7. AggregationProcessor.process()
+   ├── Identify column: "Revenue"
+   ├── Apply filter: Q1 2024
+   └── Compute: SUM = $1,234,567
+   │
+8. AnswerGenerator.generate()
+   ├── Generate answer with citations
+   ├── Create data lineage records
+   └── Calculate confidence breakdown
+   │
+9. TraceRecorder.complete_trace()
+   │
+10. Return QueryResponse with:
+    ├── answer: "The total revenue in Q1 2024 was $1,234,567"
+    ├── citations: [File: sales_2024.xlsx, Sheet: Q1, Range: B2:B100]
+    ├── confidence: 0.95
+    ├── trace_id: "tr_abc123"
+    └── processing_time_ms: 1250
+```
+
+### Chunk Visibility Flow
+
+```
+1. Developer requests: GET /api/v1/chunks/{file_id}
+   │
+2. AccessController.check_access() → Verify permissions
+   │
+3. ChunkViewer.get_chunks_for_file()
+   ├── Query ChunkMetadataStore
+   ├── Include extraction metadata
+   ├── Include quality scores
+   └── Apply pagination
+   │
+4. Return PaginatedChunkResponse with:
+    ├── chunks: [ChunkDetails...]
+    ├── total_count: 150
+    ├── page: 1
+    └── has_more: true
+```
 
 ---
 
 ## Conclusion
 
-The Google Drive Excel RAG System represents a comprehensive, production-ready solution for natural language querying of Excel files. Its modular architecture, pluggable abstractions, and multi-language support make it suitable for both MVP deployments and enterprise-scale production environments. The system balances simplicity with power, providing an intuitive user interface backed by sophisticated AI and data processing capabilities.
+The Google Drive Excel RAG System has evolved into a comprehensive, enterprise-ready platform with:
 
+- **Smart Query Pipeline**: Intelligent file/sheet selection, query classification, and answer generation
+- **Full Traceability**: Complete audit trail from query to answer with data lineage
+- **Chunk Visibility**: Debug and inspect indexed data with version tracking
+- **Enterprise Features**: Access control, batch processing, templates, webhooks, export
+- **Intelligence Layer**: Date parsing, unit awareness, anomaly detection, relationship detection
+- **Open-Source Option**: Run fully locally with Ollama, BGE-M3, and ChromaDB
+
+The modular architecture, SOLID design principles, and pluggable abstractions make it suitable for both MVP deployments and enterprise-scale production environments.

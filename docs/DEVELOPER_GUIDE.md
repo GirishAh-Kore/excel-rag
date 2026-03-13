@@ -8,12 +8,12 @@ Technical documentation for developers working on or integrating with the system
 2. [Development Setup](#development-setup)
 3. [Project Structure](#project-structure)
 4. [Core Components](#core-components)
-5. [Adding New Features](#adding-new-features)
-6. [Testing](#testing)
-7. [Deployment](#deployment)
-8. [API Reference](#api-reference)
-9. [Configuration](#configuration)
-10. [Troubleshooting](#troubleshooting)
+5. [Smart Query Pipeline](#smart-query-pipeline)
+6. [Chunk Visibility](#chunk-visibility)
+7. [Enterprise Features](#enterprise-features)
+8. [Adding New Features](#adding-new-features)
+9. [Testing](#testing)
+10. [Configuration](#configuration)
 
 ---
 
@@ -27,7 +27,7 @@ The system follows a modular, layered architecture with pluggable abstractions:
 │              (React Frontend + FastAPI REST)                 │
 ├─────────────────────────────────────────────────────────────┤
 │                    Application Layer                         │
-│     (Query Engine, Indexing Pipeline, Auth Service)          │
+│  (Query Pipeline, Chunk Viewer, Batch Processor, etc.)       │
 ├─────────────────────────────────────────────────────────────┤
 │                    Domain Layer                              │
 │        (Domain Models, Business Logic, Validators)           │
@@ -39,10 +39,11 @@ The system follows a modular, layered architecture with pluggable abstractions:
 
 ### Key Design Principles
 
-1. **Dependency Injection** - Services are injected via FastAPI dependencies
-2. **Factory Pattern** - Pluggable implementations for vector stores, embeddings, LLMs
-3. **Strategy Pattern** - Configurable extraction strategies
-4. **Repository Pattern** - Data access abstracted through storage classes
+1. **SOLID Principles** - All components follow SOLID design principles
+2. **Dependency Injection** - Services are injected via constructor (DIP)
+3. **Registry Pattern** - Pluggable implementations for processors (OCP)
+4. **No Module-Level State** - All state managed via injected services
+5. **Type Safety** - All functions have type hints
 
 ---
 
@@ -52,7 +53,7 @@ The system follows a modular, layered architecture with pluggable abstractions:
 
 - Python 3.9+
 - Node.js 20.19+ or 22.12+
-- Docker (optional, for containerized development)
+- Docker (optional)
 
 ### Backend Setup
 
@@ -63,17 +64,13 @@ cd gdrive-excel-rag
 
 # Create virtual environment
 python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
+source venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 
-# Install development dependencies
-pip install -r requirements-dev.txt
-
 # Copy environment template
 cp .env.example .env
-# Edit .env with your credentials
 
 # Run database migrations
 python -c "from src.database.migrations import run_migrations; run_migrations()"
@@ -86,28 +83,8 @@ uvicorn src.main:app --reload --port 8000
 
 ```bash
 cd frontend
-
-# Install dependencies
 npm install
-
-# Copy environment template
-cp .env.example .env
-
-# Start development server
 npm run dev
-```
-
-### Running Tests
-
-```bash
-# Backend tests
-pytest tests/ -v
-
-# With coverage
-pytest tests/ --cov=src --cov-report=html
-
-# Frontend tests
-cd frontend && npm test
 ```
 
 ---
@@ -115,291 +92,440 @@ cd frontend && npm test
 ## Project Structure
 
 ```
-gdrive-excel-rag/
-├── src/                          # Backend source code
-│   ├── abstractions/             # Pluggable service abstractions
-│   │   ├── vector_store.py       # Vector store interface
-│   │   ├── chromadb_store.py     # ChromaDB implementation
-│   │   ├── opensearch_store.py   # OpenSearch implementation
-│   │   ├── embedding_service.py  # Embedding interface
-│   │   ├── openai_embedding_service.py
-│   │   ├── sentence_transformer_service.py
-│   │   ├── cohere_embedding_service.py
-│   │   ├── bge_embedding_service.py  # BGE-M3 (local, multilingual)
-│   │   ├── llm_service.py        # LLM interface
-│   │   ├── openai_llm_service.py
-│   │   ├── anthropic_llm_service.py
-│   │   ├── gemini_llm_service.py
-│   │   ├── ollama_llm_service.py     # Ollama (local)
-│   │   ├── vllm_llm_service.py       # vLLM server
-│   │   ├── cache_service.py      # Cache interface
-│   │   ├── memory_cache.py
-│   │   └── redis_cache.py
-│   ├── api/                      # FastAPI routes and models
-│   │   ├── auth.py               # Google Drive OAuth
-│   │   ├── web_auth.py           # Web app JWT auth
-│   │   ├── files.py              # File management
-│   │   ├── chat.py               # Chat sessions
-│   │   ├── indexing.py           # Indexing operations
-│   │   ├── query.py              # Query processing
-│   │   ├── models.py             # Pydantic models
-│   │   ├── middleware.py         # Request middleware
-│   │   └── dependencies.py       # Dependency injection
-│   ├── auth/                     # Authentication layer
-│   │   ├── oauth_flow.py         # OAuth 2.0 flow
-│   │   ├── token_storage.py      # Encrypted token storage
-│   │   ├── token_refresh.py      # Token refresh logic
-│   │   └── authentication_service.py
-│   ├── gdrive/                   # Google Drive integration
-│   │   └── connector.py          # Drive API client
-│   ├── extraction/               # Excel extraction
-│   │   ├── content_extractor.py  # Core extraction (openpyxl)
-│   │   ├── configurable_extractor.py
-│   │   ├── sheet_summarizer.py
-│   │   ├── extraction_strategy.py
-│   │   ├── docling_extractor.py  # IBM Docling (open-source)
-│   │   ├── unstructured_extractor.py  # Unstructured.io (open-source)
-│   │   ├── gemini_extractor.py   # Google Gemini
-│   │   └── llama_extractor.py    # LlamaParse
-│   ├── indexing/                 # Indexing pipeline
-│   │   ├── indexing_pipeline.py
-│   │   ├── indexing_orchestrator.py
-│   │   ├── embedding_generator.py
-│   │   ├── vector_storage.py
-│   │   └── metadata_storage.py
-│   ├── query/                    # Query processing
-│   │   ├── query_engine.py       # Main orchestrator
-│   │   ├── query_analyzer.py     # Intent extraction
-│   │   ├── semantic_searcher.py  # Vector search
-│   │   ├── hybrid_searcher.py    # BM25 + semantic fusion
-│   │   ├── reranker.py           # Cross-encoder reranking
-│   │   ├── query_expander.py     # HyDE query expansion
-│   │   ├── context_compressor.py # Contextual compression
-│   │   ├── file_selector.py      # File ranking
-│   │   ├── sheet_selector.py     # Sheet selection
-│   │   ├── comparison_engine.py  # Cross-file comparison
-│   │   ├── answer_generator.py   # LLM answer generation
-│   │   ├── confidence_scorer.py
-│   │   ├── citation_generator.py
-│   │   └── conversation_manager.py
-│   ├── text_processing/          # Multi-language support
-│   │   ├── language_detector.py
-│   │   ├── tokenizer.py
-│   │   ├── normalizer.py
-│   │   └── preprocessor.py
-│   ├── database/                 # Database layer
-│   │   ├── connection.py
-│   │   ├── schema.py
-│   │   └── migrations.py
-│   ├── models/                   # Domain models
-│   │   └── domain_models.py
-│   ├── utils/                    # Utilities
-│   │   ├── logging_config.py
-│   │   ├── metrics.py
-│   │   └── dependency_checker.py
-│   ├── config.py                 # Configuration management
-│   ├── cli.py                    # CLI interface
-│   └── main.py                   # FastAPI application
-├── frontend/                     # React frontend
-│   ├── src/
-│   │   ├── components/           # React components
-│   │   ├── pages/                # Page components
-│   │   ├── services/             # API services
-│   │   ├── hooks/                # Custom hooks
-│   │   ├── types/                # TypeScript types
-│   │   └── utils/                # Utilities
-│   └── ...
-├── tests/                        # Test suite
-├── examples/                     # Usage examples
-├── scripts/                      # Utility scripts
-├── docs/                         # Documentation
-└── ...
+src/
+├── abstractions/           # Pluggable service abstractions
+│   ├── vector_store.py     # Vector store interface
+│   ├── embedding_service.py
+│   ├── llm_service.py
+│   └── cache_service.py
+├── access_control/         # Role-based access control
+│   ├── controller.py       # AccessController
+│   └── audit_logger.py
+├── api/
+│   ├── routes/             # Modular API routes
+│   │   ├── chunks.py       # Chunk visibility endpoints
+│   │   ├── query.py        # Smart query pipeline
+│   │   ├── batch.py        # Batch processing
+│   │   ├── export.py       # Export endpoints
+│   │   └── intelligence.py
+│   └── dependencies.py     # Dependency injection
+├── batch/                  # Batch query processing
+│   └── processor.py        # BatchQueryProcessor
+├── cache/                  # Query caching
+│   ├── query_cache.py      # QueryCache
+│   └── invalidation_service.py
+├── chunk_viewer/           # Chunk visibility
+│   ├── viewer.py           # ChunkViewer
+│   ├── version_store.py    # ChunkVersionStore
+│   └── feedback.py         # FeedbackCollector
+├── extraction/             # Excel extraction
+│   ├── enhanced_openpyxl.py    # Formula/pivot/chart extraction
+│   ├── streaming.py            # Large file streaming
+│   └── quality_scorer.py       # Quality scoring
+├── intelligence/           # Intelligence features
+│   ├── date_parser.py      # Natural language dates
+│   ├── unit_awareness.py   # Unit handling
+│   └── anomaly_detector.py
+├── models/                 # Domain models
+│   ├── query_pipeline.py
+│   ├── chunk_visibility.py
+│   └── traceability.py
+├── query_pipeline/         # Smart query pipeline
+│   ├── orchestrator.py     # QueryPipelineOrchestrator
+│   ├── file_selector.py    # FileSelector
+│   ├── sheet_selector.py   # SheetSelector
+│   ├── classifier.py       # QueryClassifier
+│   ├── answer_generator.py
+│   └── processors/         # Query processors
+│       ├── aggregation.py
+│       ├── lookup.py
+│       ├── summarization.py
+│       └── comparison.py
+├── templates/              # Query templates
+│   └── manager.py          # TemplateManager
+├── traceability/           # Audit and lineage
+│   ├── trace_recorder.py   # TraceRecorder
+│   └── lineage_tracker.py  # DataLineageTracker
+├── webhooks/               # Webhook system
+│   └── manager.py          # WebhookManager
+├── container.py            # Dependency injection container
+└── exceptions.py           # Exception hierarchy
 ```
 
 ---
 
 ## Core Components
 
-### Vector Store Abstraction
+### Dependency Injection Container
+
+All services are wired through the DI container:
 
 ```python
-from abc import ABC, abstractmethod
-from typing import List, Dict, Optional
-
-class VectorStore(ABC):
-    @abstractmethod
-    def create_collection(self, name: str, dimension: int, 
-                         metadata_schema: Optional[Dict] = None) -> bool:
-        """Create a new collection."""
-        pass
+# src/container.py
+class Container:
+    """Dependency injection container following DIP."""
     
-    @abstractmethod
-    def add_embeddings(self, collection: str, ids: List[str],
-                      embeddings: List[List[float]], 
-                      documents: List[str],
-                      metadata: List[Dict]) -> bool:
-        """Add embeddings to collection."""
-        pass
+    def __init__(self, config: AppConfig):
+        self.config = config
+        self._instances: Dict[str, Any] = {}
     
-    @abstractmethod
-    def search(self, collection: str, query_embedding: List[float],
-              top_k: int = 10, filters: Optional[Dict] = None) -> List[Dict]:
-        """Search for similar embeddings."""
-        pass
+    def get_query_pipeline_orchestrator(self) -> QueryPipelineOrchestrator:
+        """Get fully wired query pipeline orchestrator."""
+        return QueryPipelineOrchestrator(
+            file_selector=self.get_file_selector(),
+            sheet_selector=self.get_sheet_selector(),
+            query_classifier=self.get_query_classifier(),
+            processor_registry=self.get_processor_registry(),
+            answer_generator=self.get_answer_generator(),
+            trace_recorder=self.get_trace_recorder(),
+            cache_service=self.get_cache_service(),
+            config=self.config.query_pipeline
+        )
 ```
 
-### Embedding Service Abstraction
+### Exception Hierarchy
 
 ```python
-class EmbeddingService(ABC):
-    @abstractmethod
-    def get_embedding_dimension(self) -> int:
-        """Return embedding dimension."""
-        pass
-    
-    @abstractmethod
-    def embed_text(self, text: str) -> List[float]:
-        """Generate embedding for single text."""
-        pass
-    
-    @abstractmethod
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
-        """Generate embeddings for batch of texts."""
-        pass
+# src/exceptions.py
+class RAGSystemError(Exception):
+    """Base exception for all RAG system errors."""
+    pass
+
+class ChunkViewerError(RAGSystemError):
+    """Chunk viewer errors."""
+    pass
+
+class TraceError(RAGSystemError):
+    """Traceability errors."""
+    pass
+
+class ClassificationError(RAGSystemError):
+    """Query classification errors."""
+    pass
+
+class ProcessingError(RAGSystemError):
+    """Query processing errors."""
+    pass
+
+class SelectionError(RAGSystemError):
+    """File/sheet selection errors."""
+    pass
 ```
 
-### LLM Service Abstraction
+---
+
+## Smart Query Pipeline
+
+### Query Pipeline Orchestrator
+
+The central coordinator for query processing:
 
 ```python
-class LLMService(ABC):
-    @abstractmethod
-    def generate(self, prompt: str, system_prompt: Optional[str] = None,
-                temperature: float = 0.7, max_tokens: int = 1000) -> str:
-        """Generate text response."""
-        pass
+class QueryPipelineOrchestrator:
+    """
+    Orchestrates the smart query pipeline.
+    All dependencies injected via constructor.
+    """
     
-    @abstractmethod
-    def generate_structured(self, prompt: str, response_schema: Dict,
-                           system_prompt: Optional[str] = None) -> Dict:
-        """Generate structured JSON response."""
-        pass
+    def __init__(
+        self,
+        file_selector: FileSelector,
+        sheet_selector: SheetSelector,
+        query_classifier: QueryClassifier,
+        processor_registry: QueryProcessorRegistry,
+        answer_generator: AnswerGenerator,
+        trace_recorder: TraceRecorder,
+        cache_service: CacheService,
+        config: QueryPipelineConfig
+    ) -> None:
+        self.file_selector = file_selector
+        self.sheet_selector = sheet_selector
+        # ... all dependencies injected
+    
+    def process_query(
+        self,
+        query: str,
+        session_id: Optional[str] = None,
+        file_hints: Optional[list[str]] = None
+    ) -> QueryResponse:
+        """Process query through full pipeline."""
+        ...
 ```
 
-### Dependency Injection
+### Query Processor Registry (OCP)
+
+New processors can be added without modifying existing code:
 
 ```python
-# src/api/dependencies.py
+class QueryProcessorRegistry:
+    """Registry pattern for query processors."""
+    
+    _processors: dict[QueryType, type[BaseQueryProcessor]] = {}
+    
+    @classmethod
+    def register(cls, query_type: QueryType):
+        """Decorator to register a processor."""
+        def decorator(processor_class):
+            cls._processors[query_type] = processor_class
+            return processor_class
+        return decorator
 
-from functools import lru_cache
-from src.config import AppConfig
-from src.abstractions.vector_store_factory import create_vector_store
-from src.abstractions.embedding_service_factory import create_embedding_service
-from src.abstractions.llm_service_factory import create_llm_service
+# Usage - registration happens in each processor module
+@QueryProcessorRegistry.register(QueryType.AGGREGATION)
+class AggregationProcessor(BaseQueryProcessor):
+    """Processes aggregation queries."""
+    
+    SUPPORTED_FUNCTIONS = {"SUM", "AVERAGE", "COUNT", "MIN", "MAX", "MEDIAN"}
+    
+    def process(
+        self,
+        query: str,
+        data: RetrievedData,
+        classification: QueryClassification
+    ) -> ProcessedResult:
+        ...
+```
 
-@lru_cache()
-def get_app_config() -> AppConfig:
-    return AppConfig()
+### Adding a New Query Processor
 
-def get_vector_store():
-    config = get_app_config()
-    return create_vector_store(config.vector_store)
+1. Create processor in `src/query_pipeline/processors/`:
 
-def get_embedding_service():
-    config = get_app_config()
-    return create_embedding_service(config.embedding)
+```python
+# src/query_pipeline/processors/trend.py
+from src.query_pipeline.processor_registry import QueryProcessorRegistry
+from src.query_pipeline.processors.base import BaseQueryProcessor
+from src.models.query_pipeline import QueryType
 
-def get_llm_service():
-    config = get_app_config()
-    return create_llm_service(config.llm)
+@QueryProcessorRegistry.register(QueryType.TREND)
+class TrendProcessor(BaseQueryProcessor):
+    """Processes trend analysis queries."""
+    
+    def process(
+        self,
+        query: str,
+        data: RetrievedData,
+        classification: QueryClassification
+    ) -> ProcessedResult:
+        # Implementation
+        ...
+```
+
+2. Add QueryType enum value:
+
+```python
+# src/models/query_pipeline.py
+class QueryType(str, Enum):
+    AGGREGATION = "aggregation"
+    LOOKUP = "lookup"
+    SUMMARIZATION = "summarization"
+    COMPARISON = "comparison"
+    TREND = "trend"  # NEW
+```
+
+3. Update classifier keywords:
+
+```python
+# src/query_pipeline/classifier.py
+TREND_KEYWORDS = {"trend", "growth", "decline", "over time", "trajectory"}
+```
+
+---
+
+## Chunk Visibility
+
+### ChunkViewer Service
+
+```python
+class ChunkViewer:
+    """
+    Provides chunk visibility and debugging capabilities.
+    All dependencies injected via constructor.
+    """
+    
+    def __init__(
+        self,
+        vector_store: VectorStore,
+        metadata_store: ChunkMetadataStore,
+        version_store: ChunkVersionStore,
+        feedback_store: FeedbackStore,
+        access_controller: AccessController,
+        config: ChunkViewerConfig
+    ) -> None:
+        # All dependencies injected
+        ...
+    
+    def get_chunks_for_file(
+        self,
+        file_id: str,
+        page: int = 1,
+        page_size: int = 20,
+        user_id: Optional[str] = None
+    ) -> PaginatedChunkResponse:
+        """Get all chunks for a file with pagination."""
+        # Check access
+        if not self.access_controller.check_access(user_id, "file", file_id, "read"):
+            raise AccessDeniedError(f"Access denied to file {file_id}")
+        
+        # Query metadata store
+        chunks = self.metadata_store.get_chunks(file_id, page, page_size)
+        return PaginatedChunkResponse(chunks=chunks, ...)
+```
+
+### Chunk Version Store
+
+```python
+class ChunkVersionStore:
+    """Tracks chunk versions across re-indexing."""
+    
+    def create_version(
+        self,
+        file_id: str,
+        chunks: list[ChunkDetails],
+        extraction_strategy: str
+    ) -> str:
+        """Create new version when file is re-indexed."""
+        ...
+    
+    def get_version_history(self, file_id: str) -> list[ChunkVersion]:
+        """Get version history for a file."""
+        ...
+    
+    def diff_versions(
+        self,
+        file_id: str,
+        version_a: int,
+        version_b: int
+    ) -> VersionDiff:
+        """Compare two versions showing added/removed/modified chunks."""
+        ...
+```
+
+---
+
+## Enterprise Features
+
+### Access Controller
+
+```python
+class AccessController:
+    """
+    Role-based access control with file-level restrictions.
+    Roles: admin, developer, analyst, viewer
+    """
+    
+    def __init__(
+        self,
+        store: AccessControlStore,
+        audit_logger: AuditLogger
+    ) -> None:
+        self.store = store
+        self.audit_logger = audit_logger
+    
+    def check_access(
+        self,
+        user_id: str,
+        resource_type: str,
+        resource_id: str,
+        action: str
+    ) -> bool:
+        """Check if user has permission for action."""
+        granted = self._check_permission(user_id, resource_type, resource_id, action)
+        
+        # Log access attempt
+        self.audit_logger.log_access(
+            user_id=user_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            action=action,
+            granted=granted
+        )
+        
+        return granted
+```
+
+### Batch Query Processor
+
+```python
+class BatchQueryProcessor:
+    """Process multiple queries in parallel."""
+    
+    def __init__(
+        self,
+        query_pipeline: QueryPipelineOrchestrator,
+        store: BatchStore,
+        config: BatchConfig
+    ) -> None:
+        self.query_pipeline = query_pipeline
+        self.store = store
+        self.max_queries = config.max_queries  # Default 100
+        self.parallel_workers = config.parallel_workers  # Default 5
+    
+    async def process_batch(
+        self,
+        queries: list[str],
+        file_hints: Optional[list[str]] = None
+    ) -> str:
+        """Submit batch and return batch_id."""
+        if len(queries) > self.max_queries:
+            raise BatchError(f"Max {self.max_queries} queries per batch")
+        
+        batch_id = self._generate_batch_id()
+        # Process in parallel with worker pool
+        ...
+        return batch_id
+```
+
+### Query Cache
+
+```python
+class QueryCache:
+    """Cache query results with semantic equivalence matching."""
+    
+    def __init__(
+        self,
+        cache_service: CacheService,
+        embedding_service: EmbeddingService,
+        config: CacheConfig
+    ) -> None:
+        self.cache_service = cache_service
+        self.embedding_service = embedding_service
+        self.ttl = config.ttl  # Default 3600 seconds
+    
+    def get(self, query: str, file_ids: list[str]) -> Optional[QueryResponse]:
+        """Get cached result for semantically equivalent query."""
+        cache_key = self._generate_cache_key(query, file_ids)
+        return self.cache_service.get(cache_key)
+    
+    def invalidate_for_file(self, file_id: str) -> int:
+        """Invalidate all cache entries containing file_id."""
+        # Called when file is re-indexed
+        ...
 ```
 
 ---
 
 ## Adding New Features
 
-### Adding a New Vector Store
-
-1. Create implementation in `src/abstractions/`:
-
-```python
-# src/abstractions/pinecone_store.py
-from src.abstractions.vector_store import VectorStore
-
-class PineconeStore(VectorStore):
-    def __init__(self, api_key: str, environment: str):
-        import pinecone
-        pinecone.init(api_key=api_key, environment=environment)
-        self.index = None
-    
-    def create_collection(self, name, dimension, metadata_schema=None):
-        # Implementation
-        pass
-    
-    # ... implement other methods
-```
-
-2. Register in factory:
-
-```python
-# src/abstractions/vector_store_factory.py
-def create_vector_store(config: VectorStoreConfig) -> VectorStore:
-    if config.provider == "pinecone":
-        from src.abstractions.pinecone_store import PineconeStore
-        return PineconeStore(config.api_key, config.environment)
-    # ... existing providers
-```
-
-3. Add configuration:
-
-```python
-# src/config.py
-class VectorStoreConfig:
-    provider: str  # "chromadb", "opensearch", "pinecone"
-    # ... add pinecone-specific config
-```
-
-### Adding a New Embedding Provider
-
-1. Create implementation:
-
-```python
-# src/abstractions/voyage_embedding_service.py
-from src.abstractions.embedding_service import EmbeddingService
-
-class VoyageEmbeddingService(EmbeddingService):
-    def __init__(self, api_key: str, model: str = "voyage-2"):
-        import voyageai
-        self.client = voyageai.Client(api_key=api_key)
-        self.model = model
-    
-    def get_embedding_dimension(self) -> int:
-        return 1024  # voyage-2 dimension
-    
-    def embed_text(self, text: str) -> List[float]:
-        result = self.client.embed([text], model=self.model)
-        return result.embeddings[0]
-    
-    def embed_batch(self, texts: List[str]) -> List[List[float]]:
-        result = self.client.embed(texts, model=self.model)
-        return result.embeddings
-```
-
-2. Register in factory and update config.
-
 ### Adding a New API Endpoint
 
-1. Create router:
+1. Create route in `src/api/routes/`:
 
 ```python
-# src/api/analytics.py
+# src/api/routes/analytics.py
 from fastapi import APIRouter, Depends
-from src.api.dependencies import require_authentication
+from src.api.dependencies import get_access_controller, require_authentication
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 @router.get("/usage")
-async def get_usage_stats(user=Depends(require_authentication)):
-    # Implementation
+async def get_usage_stats(
+    user=Depends(require_authentication),
+    access_controller=Depends(get_access_controller)
+):
+    # Check access
+    if not access_controller.check_access(user.id, "analytics", "*", "read"):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     return {"queries": 100, "files": 50}
 ```
 
@@ -407,9 +533,49 @@ async def get_usage_stats(user=Depends(require_authentication)):
 
 ```python
 # src/main.py
-from src.api.analytics import router as analytics_router
+from src.api.routes.analytics import router as analytics_router
 
 app.include_router(analytics_router, prefix="/api/v1")
+```
+
+### Adding a New Abstraction
+
+1. Define interface:
+
+```python
+# src/abstractions/notification_service.py
+from abc import ABC, abstractmethod
+
+class NotificationService(ABC):
+    @abstractmethod
+    def send(self, recipient: str, message: str) -> bool:
+        """Send notification."""
+        pass
+```
+
+2. Create implementations:
+
+```python
+# src/abstractions/email_notification.py
+class EmailNotificationService(NotificationService):
+    def __init__(self, smtp_config: SMTPConfig):
+        self.smtp_config = smtp_config
+    
+    def send(self, recipient: str, message: str) -> bool:
+        # Implementation
+        ...
+```
+
+3. Register in factory:
+
+```python
+# src/abstractions/notification_factory.py
+def create_notification_service(config: NotificationConfig) -> NotificationService:
+    if config.provider == "email":
+        return EmailNotificationService(config.smtp)
+    elif config.provider == "slack":
+        return SlackNotificationService(config.slack)
+    raise ConfigurationError(f"Unknown provider: {config.provider}")
 ```
 
 ---
@@ -419,29 +585,29 @@ app.include_router(analytics_router, prefix="/api/v1")
 ### Unit Tests
 
 ```python
-# tests/test_query_analyzer.py
+# tests/test_query_classifier.py
 import pytest
-from src.query.query_analyzer import QueryAnalyzer
+from src.query_pipeline.classifier import QueryClassifier
+from src.models.query_pipeline import QueryType
 
 @pytest.fixture
-def analyzer():
-    return QueryAnalyzer(llm_service=MockLLMService())
+def classifier():
+    return QueryClassifier(llm_service=MockLLMService())
 
-def test_extract_intent(analyzer):
-    result = analyzer.analyze("What was the total revenue?")
-    assert result.intent == "retrieve"
-    assert "revenue" in result.entities
+def test_classify_aggregation(classifier):
+    result = classifier.classify("What is the total revenue?")
+    assert result.query_type == QueryType.AGGREGATION
+    assert result.confidence > 0.8
 
-def test_detect_comparison(analyzer):
-    result = analyzer.analyze("Compare Q1 and Q2 sales")
-    assert result.intent == "compare"
-    assert result.comparison_detected
+def test_classify_comparison(classifier):
+    result = classifier.classify("Compare Q1 and Q2 sales")
+    assert result.query_type == QueryType.COMPARISON
 ```
 
 ### Integration Tests
 
 ```python
-# tests/test_integration.py
+# tests/test_query_pipeline_integration.py
 import pytest
 from fastapi.testclient import TestClient
 from src.main import app
@@ -450,86 +616,16 @@ from src.main import app
 def client():
     return TestClient(app)
 
-def test_query_endpoint(client, auth_token):
+def test_smart_query_endpoint(client, auth_token):
     response = client.post(
-        "/api/v1/query",
-        json={"query": "What is the total?"},
+        "/api/v1/query/smart",
+        json={"query": "What is the total revenue?"},
         headers={"Authorization": f"Bearer {auth_token}"}
     )
     assert response.status_code == 200
     assert "answer" in response.json()
+    assert "trace_id" in response.json()
 ```
-
-### Running Tests
-
-```bash
-# All tests
-pytest tests/ -v
-
-# Specific module
-pytest tests/test_query_analyzer.py -v
-
-# With coverage
-pytest tests/ --cov=src --cov-report=html
-
-# Skip slow tests
-pytest tests/ -v -m "not slow"
-```
-
----
-
-## Deployment
-
-### Docker Deployment
-
-```bash
-# Build and start
-docker-compose up -d --build
-
-# View logs
-docker-compose logs -f
-
-# Stop
-docker-compose down
-```
-
-### Production Checklist
-
-- [ ] Change default credentials
-- [ ] Generate strong JWT and encryption keys
-- [ ] Configure HTTPS via reverse proxy
-- [ ] Set up monitoring and alerting
-- [ ] Configure automated backups
-- [ ] Review rate limits
-- [ ] Set resource limits
-- [ ] Enable structured logging
-- [ ] Configure CORS origins
-
-### Scaling Considerations
-
-| Component | MVP | Production |
-|-----------|-----|------------|
-| Vector Store | ChromaDB (local) | OpenSearch (cluster) |
-| Cache | In-memory | Redis (cluster) |
-| Database | SQLite | PostgreSQL |
-| Workers | Single process | Multiple instances |
-
----
-
-## API Reference
-
-See `API_ENDPOINTS_REFERENCE.md` for complete API documentation.
-
-### Key Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/login` | Web authentication |
-| POST | `/api/v1/query` | Submit query |
-| POST | `/api/v1/files/upload` | Upload file |
-| GET | `/api/v1/files/list` | List files |
-| POST | `/api/v1/index/full` | Full indexing |
-| GET | `/health` | Health check |
 
 ---
 
@@ -537,114 +633,42 @@ See `API_ENDPOINTS_REFERENCE.md` for complete API documentation.
 
 ### Environment Variables
 
-See `.env.example` for all available options.
-
-### Key Configuration Sections
-
 ```bash
-# Vector Store
-VECTOR_STORE_PROVIDER=chromadb  # or opensearch
-CHROMADB_PATH=./data/chroma
+# Query Pipeline
+QUERY_PIPELINE_TIMEOUT=30
+FILE_SELECTION_THRESHOLD_HIGH=0.9
+FILE_SELECTION_THRESHOLD_LOW=0.5
+CLASSIFICATION_CONFIDENCE_THRESHOLD=0.6
 
-# Embedding (choose one)
-EMBEDDING_PROVIDER=openai       # OpenAI (API)
-EMBEDDING_PROVIDER=bge-m3       # BGE-M3 (local, free)
-EMBEDDING_PROVIDER=sentence-transformers  # Local, free
-EMBEDDING_API_KEY=sk-...        # Only for API providers
-EMBEDDING_MODEL=text-embedding-3-small
+# Caching
+QUERY_CACHE_TTL=3600
+QUERY_CACHE_ENABLED=true
 
-# LLM (choose one)
-LLM_PROVIDER=openai             # OpenAI GPT-4o
-LLM_PROVIDER=anthropic          # Claude 3.5 Sonnet
-LLM_PROVIDER=gemini             # Google Gemini
-LLM_PROVIDER=ollama             # Ollama (local, free)
-LLM_PROVIDER=vllm               # vLLM server
-LLM_API_KEY=sk-...              # Only for API providers
-LLM_MODEL=gpt-4o
-LLM_BASE_URL=http://localhost:11434  # For Ollama/vLLM
+# Batch Processing
+BATCH_MAX_QUERIES=100
+BATCH_PARALLEL_WORKERS=5
 
-# Extraction Strategy
-EXTRACTION_STRATEGY=openpyxl    # Best for pivot tables/charts
-EXTRACTION_STRATEGY=unstructured  # Open-source, local
-EXTRACTION_STRATEGY=docling     # IBM open-source
+# Traceability
+TRACE_RETENTION_DAYS=90
+ENABLE_DATA_LINEAGE=true
 
-# Advanced RAG Features
-ENABLE_HYBRID_SEARCH=true       # BM25 + semantic
-ENABLE_RERANKING=true           # Cross-encoder reranking
-ENABLE_HYDE=true                # HyDE query expansion
-ENABLE_STREAMING=true           # SSE streaming
+# Access Control
+ACCESS_CONTROL_ENABLED=true
+DEFAULT_USER_ROLE=viewer
+AUDIT_LOG_ENABLED=true
 
-# Cache
-CACHE_BACKEND=memory            # or redis
-REDIS_HOST=localhost
-
-# Language
-SUPPORTED_LANGUAGES=en,th
-DEFAULT_LANGUAGE=en
+# Extraction
+EXTRACT_FORMULAS=true
+EXTRACT_PIVOT_TABLES=true
+QUALITY_THRESHOLD=0.5
 ```
 
 ---
 
-## Troubleshooting
+## API Reference
 
-### Common Development Issues
+See [API_ENDPOINTS_REFERENCE.md](../API_ENDPOINTS_REFERENCE.md) for complete API documentation.
 
-**Import errors:**
-```bash
-# Ensure you're in the virtual environment
-source venv/bin/activate
-
-# Reinstall dependencies
-pip install -r requirements.txt
-```
-
-**Database locked:**
-```bash
-# Stop all processes using the database
-# Delete the lock file if present
-rm -f data/metadata.db-journal
-```
-
-**Vector store connection failed:**
-```bash
-# Check ChromaDB is running
-curl http://localhost:8001/api/v1/heartbeat
-
-# Restart ChromaDB
-docker-compose restart chromadb
-```
-
-### Debugging Tips
-
-1. Enable debug logging:
-```bash
-LOG_LEVEL=DEBUG uvicorn src.main:app --reload
-```
-
-2. Use correlation IDs to trace requests through logs
-
-3. Check health endpoint for component status:
-```bash
-curl http://localhost:8000/health | jq
-```
-
-4. Use interactive API docs at `/docs` for testing
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Write tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
-### Code Style
-
-- Python: Follow PEP 8, use type hints
-- TypeScript: Follow ESLint configuration
-- Use meaningful variable and function names
-- Add docstrings to public functions
-- Keep functions focused and small
-
+Interactive documentation available at:
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`

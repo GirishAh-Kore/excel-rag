@@ -4,13 +4,17 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A production-ready Retrieval-Augmented Generation (RAG) system for querying Excel files using natural language. Connect to Google Drive, index your spreadsheets, and get intelligent answers with source citations.
+A production-ready Retrieval-Augmented Generation (RAG) system for querying Excel files using natural language. Connect to Google Drive, index your spreadsheets, and get intelligent answers with source citations and full traceability.
 
 ## Features
 
 - **Natural Language Queries** - Ask questions in plain English (or Thai) about your Excel data
+- **Smart Query Pipeline** - Intelligent file/sheet selection, query classification, and answer generation
 - **Google Drive Integration** - OAuth 2.0 authentication with automatic file discovery
 - **Advanced RAG Pipeline** - Hybrid search (BM25 + semantic), cross-encoder reranking, HyDE query expansion
+- **Chunk Visibility** - Debug and inspect indexed data with version tracking
+- **Enterprise Features** - Access control, batch processing, templates, webhooks, export
+- **Full Traceability** - Complete audit trail from query to answer with data lineage
 - **Multi-Provider Support** - Pluggable LLMs, embeddings, and vector stores
 - **Open-Source Options** - Run fully locally with Ollama, BGE-M3, and ChromaDB (zero API costs)
 - **Excel Intelligence** - Extracts formulas, pivot tables, charts, and complex structures
@@ -69,13 +73,13 @@ cd frontend && npm install && npm run dev
 
 Open http://localhost:5173 and login with `girish` / `Girish@123`
 
-📖 **Detailed Guide**: See [Installation Guide](docs/INSTALLATION_GUIDE.md) for complete setup instructions and troubleshooting.
+📖 **Detailed Guide**: See [Installation Guide](docs/INSTALLATION_GUIDE.md) for complete setup instructions.
 
 📖 **Mac Users**: See [Mac Installation Guide](docs/MAC_INSTALLATION_GUIDE.md) for Apple Silicon optimization.
 
 ## Configuration Options
 
-The system is highly configurable through environment variables. Here are the key options:
+The system is highly configurable through environment variables.
 
 ### LLM Providers
 
@@ -100,12 +104,10 @@ The system is highly configurable through environment variables. Here are the ke
 
 | Strategy | Config | Best For |
 |----------|--------|----------|
-| openpyxl | `EXTRACTION_STRATEGY=openpyxl` | **Pivot tables & charts** (recommended default) |
+| openpyxl | `EXTRACTION_STRATEGY=openpyxl` | **Pivot tables & charts** (recommended) |
 | Unstructured | `EXTRACTION_STRATEGY=unstructured` | Complex layouts, runs locally |
 | Docling | `EXTRACTION_STRATEGY=docling` | PDF-heavy workflows |
 | Gemini | `EXTRACTION_STRATEGY=gemini` | Multimodal understanding |
-
-> **Note**: openpyxl is recommended for Excel files with pivot tables and charts. Unstructured and Docling flatten pivot tables and ignore charts.
 
 ### Vector Stores
 
@@ -115,16 +117,6 @@ The system is highly configurable through environment variables. Here are the ke
 | OpenSearch | `VECTOR_STORE_PROVIDER=opensearch` | Production, scaling |
 
 ## Example Configurations
-
-### Cloud Configuration (OpenAI + ChromaDB)
-```bash
-LLM_PROVIDER=openai
-LLM_API_KEY=sk-...
-LLM_MODEL=gpt-4o
-EMBEDDING_PROVIDER=openai
-EMBEDDING_API_KEY=sk-...
-VECTOR_STORE_PROVIDER=chromadb
-```
 
 ### Fully Open-Source (Zero API Costs)
 ```bash
@@ -137,18 +129,17 @@ VECTOR_STORE_PROVIDER=chromadb
 EXTRACTION_STRATEGY=openpyxl
 ```
 
-### High-Performance Local (vLLM)
+### Cloud Configuration (OpenAI + ChromaDB)
 ```bash
-LLM_PROVIDER=vllm
-LLM_MODEL=meta-llama/Llama-3.1-8B-Instruct
-LLM_BASE_URL=http://localhost:8000/v1
-EMBEDDING_PROVIDER=bge-m3
+LLM_PROVIDER=openai
+LLM_API_KEY=sk-...
+LLM_MODEL=gpt-4o
+EMBEDDING_PROVIDER=openai
+EMBEDDING_API_KEY=sk-...
 VECTOR_STORE_PROVIDER=chromadb
 ```
 
 ## Advanced RAG Features
-
-The system includes modern RAG improvements that can be toggled:
 
 | Feature | Config | Description |
 |---------|--------|-------------|
@@ -156,7 +147,65 @@ The system includes modern RAG improvements that can be toggled:
 | Cross-Encoder Reranking | `ENABLE_RERANKING=true` | Rerank results with cross-encoder model |
 | HyDE Query Expansion | `ENABLE_HYDE=true` | Hypothetical Document Embeddings |
 | Streaming Responses | `ENABLE_STREAMING=true` | SSE streaming for long answers |
-| Split Models | `ANALYSIS_MODEL` / `GENERATION_MODEL` | Use different models for analysis vs generation |
+| Query Caching | `QUERY_CACHE_ENABLED=true` | Cache results with configurable TTL |
+
+## Smart Query Pipeline (NEW)
+
+The system includes an intelligent query pipeline that:
+
+1. **Classifies Queries** - Automatically detects query type (aggregation, lookup, summarization, comparison)
+2. **Selects Files** - Ranks files by semantic similarity, metadata matching, and user preferences
+3. **Selects Sheets** - Identifies the most relevant sheets within selected files
+4. **Generates Answers** - Produces natural language answers with source citations
+5. **Tracks Lineage** - Records complete data path from source cells to answers
+
+### Query Types
+
+| Type | Example | Processing |
+|------|---------|------------|
+| Aggregation | "What is the total revenue?" | SUM, AVG, COUNT, MIN, MAX, MEDIAN |
+| Lookup | "Show me Q1 expenses" | Find specific values with formatting |
+| Summarization | "Summarize the sales data" | Generate natural language summary |
+| Comparison | "Compare Q1 vs Q2" | Calculate differences and trends |
+
+## Enterprise Features (NEW)
+
+### Chunk Visibility
+- View all indexed chunks with metadata
+- Search chunks with semantic similarity
+- Track chunk versions across re-indexing
+- Submit feedback on chunk quality
+
+### Traceability
+- Complete audit trail for every query
+- Data lineage from source cell to answer
+- Configurable retention (default 90 days)
+- Export traces in JSON/CSV
+
+### Access Control
+- Role-based access (admin, developer, analyst, viewer)
+- File-level permissions
+- Audit logging for all access attempts
+
+### Batch Processing
+- Process up to 100 queries in parallel
+- Progress tracking via batch_id
+- Continue on partial failures
+
+### Query Templates
+- Parameterized templates with `{{parameter}}` syntax
+- Share templates within organization
+- Execute with parameter substitution
+
+### Webhooks
+- Events: indexing_complete, query_failed, low_confidence_answer, batch_complete
+- Retry with exponential backoff
+- Delivery history tracking
+
+### Export
+- Formats: CSV, Excel (.xlsx), JSON
+- Preserve data types and formatting
+- Scheduled exports for recurring reports
 
 ## CLI Usage
 
@@ -176,6 +225,8 @@ python -m src.cli query "What was the total revenue in Q1?"
 
 ## API Endpoints
 
+### Core Endpoints
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/v1/query` | Submit natural language query |
@@ -183,8 +234,35 @@ python -m src.cli query "What was the total revenue in Q1?"
 | POST | `/api/v1/files/upload` | Upload Excel file |
 | GET | `/api/v1/files/list` | List indexed files |
 | POST | `/api/v1/index/full` | Start full indexing |
-| GET | `/api/v1/index/status/{job_id}` | Check indexing status |
 | GET | `/health` | Health check |
+
+### Smart Query Pipeline (NEW)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/query/smart` | Process with smart pipeline |
+| POST | `/api/v1/query/clarify` | Respond to clarification |
+| GET | `/api/v1/query/classify` | Get query classification |
+| GET | `/api/v1/query/trace/{trace_id}` | Get query trace |
+| GET | `/api/v1/lineage/{lineage_id}` | Get data lineage |
+
+### Chunk Visibility (NEW)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/v1/chunks/{file_id}` | Get chunks for file |
+| POST | `/api/v1/chunks/search` | Search chunks |
+| GET | `/api/v1/files/{file_id}/extraction-metadata` | Get extraction details |
+| GET | `/api/v1/files/quality-report` | Get quality scores |
+
+### Enterprise (NEW)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/v1/query/batch` | Submit batch queries |
+| POST | `/api/v1/query/templates` | Create query template |
+| POST | `/api/v1/export` | Export results |
+| POST | `/api/v1/webhooks` | Register webhook |
 
 See full API documentation at `/docs` when the server is running.
 
@@ -207,13 +285,25 @@ docker-compose down
 excel-rag/
 ├── src/
 │   ├── abstractions/      # Pluggable services (LLM, embedding, vector store)
+│   ├── access_control/    # Role-based access control (NEW)
 │   ├── api/               # FastAPI routes
+│   │   └── routes/        # Modular API routes (NEW)
 │   ├── auth/              # OAuth 2.0 authentication
+│   ├── batch/             # Batch query processing (NEW)
+│   ├── cache/             # Query caching (NEW)
+│   ├── chunk_viewer/      # Chunk visibility (NEW)
+│   ├── export/            # Export service (NEW)
 │   ├── extraction/        # Excel extraction strategies
 │   ├── gdrive/            # Google Drive integration
 │   ├── indexing/          # Indexing pipeline
+│   ├── intelligence/      # Date parsing, anomaly detection (NEW)
+│   ├── models/            # Domain models (NEW)
 │   ├── query/             # Query processing engine
+│   ├── query_pipeline/    # Smart query pipeline (NEW)
+│   ├── templates/         # Query templates (NEW)
 │   ├── text_processing/   # Multi-language support
+│   ├── traceability/      # Audit and lineage (NEW)
+│   ├── webhooks/          # Webhook system (NEW)
 │   └── config.py          # Configuration management
 ├── frontend/              # React frontend
 ├── tests/                 # Test suite
@@ -227,6 +317,7 @@ excel-rag/
 - [Solution Architecture](SOLUTION_ARCHITECTURE.md) - System architecture
 - [API Reference](API_ENDPOINTS_REFERENCE.md) - Complete API docs
 - [Docker Guide](DOCKER.md) - Docker deployment
+- [Installation Guide](docs/INSTALLATION_GUIDE.md) - Setup instructions
 
 ## Contributing
 
